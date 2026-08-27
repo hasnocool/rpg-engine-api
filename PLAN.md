@@ -43,7 +43,8 @@ The authoritative server owns:
 - creator workspaces, content validation/publication, encounter templates, and content versioning;
 - lobbies, invitations, ready checks, live DM/session operations, checkpoints/branches, recaps, and journals;
 - simulation, content-quality, reachability, balance-evidence, and regression tooling;
-- an explicit boundary between data-only content packs and trusted executable rules extensions.
+- an explicit boundary between data-only content packs and trusted executable rules extensions;
+- a canonical local/CI test execution contract that produces commit-bound machine-readable evidence for merge and release gates.
 
 Clients should primarily:
 
@@ -120,6 +121,8 @@ Every distributable content record must retain source/license provenance.
 25. **Checkpoints preserve history.** The default restore workflow creates a branch from history instead of destructively rewriting the authoritative event stream.
 26. **Simulation uses the real runtime.** Balance/content-quality tooling may automate the engine but must not become a simplified second rules/combat implementation.
 27. **Content upgrades are explicit.** Active campaigns do not silently receive mechanic-changing pack/extension revisions; upgrades use diff, compatibility, impact, migration dry-run, checkpoint, activation, and replay verification.
+28. **Execution claims require evidence.** A remote agent may design or inspect tests, but claims that suites passed locally require commit-bound local-agent or CI evidence.
+29. **Verification is revision-specific.** Green evidence for one commit does not automatically verify a later code-changing commit; blocked/skipped required suites are never silently counted as passed.
 
 ---
 
@@ -623,7 +626,7 @@ Keep database migrations, event upcasters, projection migrations/rebuilds, conte
 
 Authorization evaluates role plus resource scope. DM is a permission bundle, not a DB bypass. Authoring/publishing, session operations, checkpoints/branches, simulation jobs, content activation, and trusted extension administration use explicit permissions.
 
-Imported content and authored text are untrusted input. Ordinary content packs cannot execute arbitrary code. Secrets/tokens never appear in gameplay events/logs/exports/controller traces/simulation artifacts.
+Imported content and authored text are untrusted input. Ordinary content packs cannot execute arbitrary code. Secrets/tokens never appear in gameplay events/logs/exports/controller traces/simulation artifacts/test-evidence artifacts.
 
 ---
 
@@ -681,11 +684,14 @@ Normative test specifications:
 
 - [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md)
 - [`docs/testing/SIMULATION_QUALITY_LAB.md`](docs/testing/SIMULATION_QUALITY_LAB.md)
+- [`docs/testing/LOCAL_TEST_AGENT.md`](docs/testing/LOCAL_TEST_AGENT.md)
 - [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md)
 
 Testing includes unit/domain/controller tests, rules conformance, deterministic replay, creation workflows, timing/action matrices, visibility/security, content compatibility, migration fixtures, persistence failures, API/live contracts, property/model-based tests, public-interface human-play scenarios, generated action walkers, simulation batches, static/reachability analysis, and performance benchmarks.
 
 `Testing Grounds` is the canonical continuous integration/playtest campaign and grows to cover campaign/lobby/session, character creation, town/social/quests, trade/crafting, travel/discovery, autonomous NPC encounters, rewards/progression, reconnect, checkpoint/branch, session close/recap, and replay.
+
+Execution verification is separate from test design. Local-agent/CI evidence must bind the exact commit, canonical test profile, environment, suite results, and relevant artifacts. Missing, blocked, or stale evidence cannot be represented as a green execution result.
 
 ---
 
@@ -736,6 +742,10 @@ rpg-engine-api/
 │   ├── migration/
 │   ├── simulation/
 │   └── playtest/
+├── scripts/
+│   └── test
+├── artifacts/
+│   └── test-evidence/       # generated/usually not committed
 ├── examples/
 ├── docs/
 │   ├── architecture/
@@ -747,6 +757,7 @@ rpg-engine-api/
 │   ├── extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md
 │   ├── testing/HUMAN_PLAYTESTING.md
 │   ├── testing/SIMULATION_QUALITY_LAB.md
+│   ├── testing/LOCAL_TEST_AGENT.md
 │   └── decisions/
 ├── migrations/
 ├── PLAN.md
@@ -764,7 +775,7 @@ rpg-engine-api/
 
 ### Goal
 
-Create the smallest authoritative engine capable of typed commands -> reproducible versioned events, while establishing the seams that later gameplay, authoring, controllers, testing, simulation, and extensions depend on.
+Create the smallest authoritative engine capable of typed commands -> reproducible versioned events, while establishing the seams that later gameplay, authoring, controllers, testing, simulation, extensions, and evidence-driven local execution depend on.
 
 ### Deliverables
 
@@ -783,21 +794,24 @@ Create the smallest authoritative engine capable of typed commands -> reproducib
 - canonical state hashing/replay fixtures;
 - health/readiness endpoints;
 - playtest harness skeleton, seed/transcript/artifact/coverage schemas;
+- `TestEvidenceBundle`/suite/environment schemas;
+- canonical test-profile runner/manifest seam with at least `smoke` and `pr` foundations;
+- machine-readable JUnit/evidence artifact output;
 - ContentQualityReport/CompatibilityReport schema seams;
 - Testing Grounds fixture skeleton;
 - black-box minimal command/replay/idempotency/conflict scenarios.
 
 ### Exit criteria
 
-The minimal public command path is deterministic/replayable; an actor can carry a versioned controller assignment; published definitions and trusted-extension metadata have stable version seams; the playtest/quality artifact foundations exist without later architecture rewrites.
+The minimal public command path is deterministic/replayable; an actor can carry a versioned controller assignment; published definitions and trusted-extension metadata have stable version seams; the playtest/quality artifact foundations exist without later architecture rewrites; and a local executor can run the initial canonical profile for an exact commit and produce machine-readable evidence without remote agents fabricating execution claims.
 
 ---
 
 ## v0.2 — First-Class Time + Universal Actions
 
-Add the full scheduler/timing modes, universal action lifecycle, deadlines/timeouts, controller eligibility hooks, movement/rest/cooldown foundations, exact controllable-clock playtests, and disconnect/control-handoff timing seams.
+Add the full scheduler/timing modes, universal action lifecycle, deadlines/timeouts, controller eligibility hooks, movement/rest/cooldown foundations, exact controllable-clock playtests, disconnect/control-handoff timing seams, and include those suites in the canonical local profiles.
 
-Exit when one representative action works deterministically under every timing mode and controller eligibility/timeout/reconnect paths require no blocking sleeps or polling.
+Exit when one representative action works deterministically under every timing mode and controller eligibility/timeout/reconnect paths require no blocking sleeps or polling, with matching local/CI evidence for the candidate revision before the milestone execution gate is satisfied.
 
 ---
 
@@ -805,7 +819,7 @@ Exit when one representative action works deterministically under every timing m
 
 Add SRD combat foundations, encounter runtime lifecycle, `EncounterTemplate` authoring schema, participant groups/waves/objectives/rewards/scaling foundation, `SimpleNpcController` combat MVP, behavior profiles/reactions/fallbacks, encounter smoke simulation, human-vs-NPC playtest, and deterministic AI-vs-AI simulation.
 
-Exit when a creator can define/validate a basic encounter template and a human-facing test client can instantiate/play it against autonomous enemies through public interfaces with deterministic replay.
+Exit when a creator can define/validate a basic encounter template and a human-facing test client can instantiate/play it against autonomous enemies through public interfaces with deterministic replay, proven by the required local profile/evidence bundle for the exact revision.
 
 ---
 
@@ -813,7 +827,7 @@ Exit when a creator can define/validate a basic encounter template and a human-f
 
 Add data-driven effects/features/resources/abilities/conditions/progression, authoring schemas for those definitions, safe declarative DSL expansion, trusted extension points for predicates/effect operations if required, simulation metrics for abilities/resources/effects, and generated-action exploration.
 
-Exit when representative mechanics can be authored/validated/published, exercised by humans/NPCs, and inspected through simulation without custom hidden handlers.
+Exit when representative mechanics can be authored/validated/published, exercised by humans/NPCs, and inspected through simulation without custom hidden handlers, with execution evidence for relevant integration/playtest/simulation suites.
 
 ---
 
@@ -821,7 +835,7 @@ Exit when representative mechanics can be authored/validated/published, exercise
 
 Add spatial adapters, path/LOS/cover/terrain/objects/containers/hazards/scenes/discovery, controller-safe perception/movement, world/location/scene/object authoring schemas, optional trusted spatial adapter provider seam, and spatial/perception simulation invariants.
 
-Exit when one exploration/encounter fixture works across multiple spatial adapters and clients/controllers receive only permitted knowledge.
+Exit when one exploration/encounter fixture works across multiple spatial adapters and clients/controllers receive only permitted knowledge, verified by the canonical local profile and visibility/playtest evidence.
 
 ---
 
@@ -829,7 +843,7 @@ Exit when one exploration/encounter fixture works across multiple spatial adapte
 
 Add full ruleset-driven character creator/runtime, higher-level/multiclass/advancement/import-export, authoring schemas for classes/species/backgrounds/templates/progression, systematic creator/playtest matrices, and progression reachability analysis.
 
-Exit when generic clients and creator tools can discover, author, validate, create, and advance representative characters without local hidden rules.
+Exit when generic clients and creator tools can discover, author, validate, create, and advance representative characters without local hidden rules, with local evidence for creation/playtest/reachability paths.
 
 ---
 
@@ -855,15 +869,16 @@ Add:
 - initial Content Testing SDK;
 - quest/dialogue/world/content reachability analysis;
 - creator-facing ContentQualityReport;
+- local-agent `playtest`, `simulation`, `migration`, `replay`, `full`, and long-form Testing Grounds profile integration;
 - Testing Grounds long-form town -> social -> quest -> trade -> travel -> autonomous encounter -> reward -> progression -> checkpoint/session-close journey.
 
-Exit when a creator can author/publish a small campaign content set, a DM can host/operate a complete session, and the quality lab can validate/reachability-test/simulate the reference content without bypassing the real runtime.
+Exit when a creator can author/publish a small campaign content set, a DM can host/operate a complete session, and the quality lab can validate/reachability-test/simulate the reference content without bypassing the real runtime, with reproducible local evidence for the composed workflow.
 
 ---
 
 ## v0.8 — Advanced Intelligent and External Controllers
 
-Build richer utility/goals/memory/schedules/external/LLM controllers on the proven baseline. Add controller comparisons in the simulation lab, explicit external-controller circuit breakers/fallbacks, AI DM command surfaces, and trusted controller-provider extension seams.
+Build richer utility/goals/memory/schedules/external/LLM controllers on the proven baseline. Add controller comparisons in the simulation lab, explicit external-controller circuit breakers/fallbacks, AI DM command surfaces, trusted controller-provider extension seams, and executor evidence for external-controller/fallback scenarios.
 
 `SimpleNpcController` remains the deterministic baseline/reference/fallback.
 
@@ -879,19 +894,21 @@ Stabilize `/api/v1`, OpenAPI/error/version/deprecation contracts, auth, discover
 - remote test deployment support;
 - stable trusted extension API/capability contracts;
 - content semantic diff/compatibility/impact/migration-preview APIs;
-- controller assignment/status surfaces without leaking hidden AI state.
+- controller assignment/status surfaces without leaking hidden AI state;
+- stable local test CLI/profile manifests and `TestEvidenceBundle` schema;
+- execution targets for in-process, local-server, containerized, and authorized remote test deployments.
 
-Exit when the same executable scenarios can validate public game clients, creator workflows, session operations, simulation tooling, and content-upgrade preview through stable contracts.
+Exit when the same executable scenarios can validate public game clients, creator workflows, session operations, simulation tooling, content-upgrade preview, and canonical test profiles through stable contracts.
 
 ---
 
 ## v1.0 — Production-Ready SRD 5.2.1 RPG Engine Platform
 
-Deliver stable core/game/client/controller schemas, SRD-compatible rules package, deterministic `SimpleNpcController`, complete authoring/validation/publish workflow, reference Creator APIs/examples, complete session/lobby/checkpoint/recap workflow, Content Testing SDK and simulation-lab reference workflows, trusted extension boundary documentation, content upgrade dry-run/activation/rollback-or-branch workflow, migration/replay fixtures, sample campaign/content, observability/security/backup/recovery/performance tooling, reference clients, and executable release acceptance scenarios.
+Deliver stable core/game/client/controller schemas, SRD-compatible rules package, deterministic `SimpleNpcController`, complete authoring/validation/publish workflow, reference Creator APIs/examples, complete session/lobby/checkpoint/recap workflow, Content Testing SDK and simulation-lab reference workflows, trusted extension boundary documentation, content upgrade dry-run/activation/rollback-or-branch workflow, migration/replay fixtures, sample campaign/content, observability/security/backup/recovery/performance tooling, reference clients, executable release acceptance scenarios, and a strict local/CI `release` evidence bundle for the exact release candidate commit.
 
 ### v1.0 success statement
 
-A third-party developer can build a supported client; a creator can author/validate/publish content; a DM can host and recover sessions; non-human actors can play autonomously; content can be simulated and quality-checked; and campaigns can safely evolve content versions—all without modifying the authoritative core, duplicating hidden rules, or destroying historical replayability.
+A third-party developer can build a supported client; a creator can author/validate/publish content; a DM can host and recover sessions; non-human actors can play autonomously; content can be simulated and quality-checked; campaigns can safely evolve content versions; and release claims are backed by reproducible execution evidence—all without modifying the authoritative core, duplicating hidden rules, or destroying historical replayability.
 
 ---
 
@@ -899,7 +916,7 @@ A third-party developer can build a supported client; a creator can author/valid
 
 The existing gameplay acceptance matrix remains mandatory and executable. It must cover rules/content setup, campaign/lobby/session creation, character creation, exploration/world interaction, social/quest systems, encounter/timing/controllers, progression, logs/history/replay, live sync, and content/controller evolution/recovery.
 
-In addition, v1.0 release scenarios must demonstrate the creator/operations/quality/extension acceptance set in Section 47.
+In addition, v1.0 release scenarios must demonstrate the creator/operations/quality/extension acceptance set in Section 47 and be included in the exact release candidate's `release` TestEvidenceBundle.
 
 ---
 
@@ -924,6 +941,7 @@ A subsystem is not considered planned merely because a noun/interface exists. Be
 - simulation/reachability/quality evidence where relevant;
 - trusted extension implications where relevant;
 - automated tests/milestone exit criteria;
+- canonical local test profile(s) and required evidence artifacts;
 - source/license provenance for distributable content;
 - public human/client journey for user-visible behavior;
 - coverage-manifest entries for positive/negative/visibility/timing/reconnect/controller/replay cases.
@@ -932,7 +950,9 @@ A subsystem is not considered planned merely because a noun/interface exists. Be
 
 # 41. Definition of done for every milestone
 
-A milestone is not complete until applicable code is typed/non-blocking; unit/integration/determinism/replay/visibility/controller tests pass; public schemas are documented/versioned; migrations/upcasters are included; licensing/provenance is correct; command/event/controller/content compatibility is preserved; concurrency/idempotency is tested; user-visible features have black-box play scenarios; timing uses controllable clocks; failures are reproducible; coverage manifests are current; creator-facing schemas validate/publish correctly; simulation/reachability checks exist where the feature is content-driven; and extension/content migrations are dry-run/replay-tested where interpretation changes.
+A milestone is not complete until applicable code is typed/non-blocking; required unit/integration/determinism/replay/visibility/controller tests exist; public schemas are documented/versioned; migrations/upcasters are included; licensing/provenance is correct; command/event/controller/content compatibility is preserved; concurrency/idempotency is tested; user-visible features have black-box play scenarios; timing uses controllable clocks; failures are reproducible; coverage manifests are current; creator-facing schemas validate/publish correctly; simulation/reachability checks exist where the feature is content-driven; and extension/content migrations are dry-run/replay-tested where interpretation changes.
+
+For the **execution gate**, the required local-agent/CI `TestEvidenceBundle` must match the candidate commit and canonical profile. If evidence is unavailable, blocked, stale, or missing required suites, the work may be described as implemented but not execution-verified and must not be represented as locally passing.
 
 ---
 
@@ -949,10 +969,11 @@ command bus
 event store/outbox
 health/command API
 playtest harness skeleton
+TestEvidenceBundle + test profile runner skeleton
 quality/compatibility artifact schemas
 ```
 
-Prove CreateCampaign/CreateActor, controller assignment, deterministic dice, replay hash, idempotent retry, stale stream conflict, and one public playtest command/replay path. Do not import large content catalogs, implement advanced AI, or build the full Creator Studio yet.
+Prove CreateCampaign/CreateActor, controller assignment, deterministic dice, replay hash, idempotent retry, stale stream conflict, and one public playtest command/replay path. The local executor should be able to run the initial `smoke`/`pr` profile and emit commit-bound machine-readable evidence. Do not import large content catalogs, implement advanced AI, or build the full Creator Studio yet.
 
 ---
 
@@ -964,11 +985,11 @@ Explicit future scope includes distributed zones/shards, large-world cross-proce
 
 # 44. Long-term product goal
 
-The engine should support multiple timing modes and replaceable controllers without replacing the game-state model, rules runtime, action system, scheduler, persistence, client API, authoring formats, or replay model.
+The engine should support multiple timing modes and replaceable controllers without replacing the game-state model, rules runtime, action system, scheduler, persistence, client API, authoring formats, replay model, or evidence contract.
 
 > **The engine understands time, events, actions, resources, effects, space, knowledge, rules, content, sessions, and replaceable controllers—not one hard-coded turn system, client, authoring UI, or AI implementation.**
 
-> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public interfaces; if content can be authored, it must be validateable/testable/versionable; if a campaign evolves, old history must remain interpretable.**
+> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public interfaces; if content can be authored, it must be validateable/testable/versionable; if a campaign evolves, old history must remain interpretable; if a change is claimed to pass locally, that claim must be backed by revision-matched machine-produced evidence.**
 
 ---
 
@@ -1131,3 +1152,198 @@ creator drafts content
 ```
 
 This workflow is the architectural proof that authoring, gameplay, operations, quality tooling, and content evolution are one coherent platform rather than disconnected subsystems.
+
+---
+
+# 48. Local test agent execution and evidence architecture
+
+[`docs/testing/LOCAL_TEST_AGENT.md`](docs/testing/LOCAL_TEST_AGENT.md) is normative for executing repository tests in a real local/deployment-like environment and for communicating results back to remote development/review agents.
+
+## 48.1 Responsibility split
+
+```text
+remote development/review agent
+    architecture + implementation
+    test/scenario design
+    static review
+    evidence interpretation
+    fix preparation
+
+local test agent / CI executor
+    checkout exact candidate revision
+    provision required local services
+    execute canonical test profile
+    capture machine-readable evidence
+    preserve reproducible failure artifacts
+```
+
+The local executor is the authority for claims about what actually ran and passed in that environment. Remote agents remain responsible for requiring the right tests and must not fabricate execution status when they cannot run them.
+
+## 48.2 Commit-bound evidence
+
+Every execution produces a versioned `TestEvidenceBundle` bound to an exact `commit_sha`.
+
+Conceptual top-level fields:
+
+```text
+schema_version
+evidence_id
+repository
+commit_sha
+branch
+dirty_worktree
+test_profile
+executor_kind/executor_version
+environment
+started_at/finished_at
+overall_status
+suites[]
+artifacts[]
+summary
+```
+
+Environment metadata records safe reproducibility information such as OS/architecture, Python/dependency fingerprint, PostgreSQL/service versions, engine-config fingerprint, locale/timezone, and relevant feature flags. Secrets are never collected.
+
+## 48.3 Canonical profiles
+
+The repository converges on one scriptable test entry point supporting:
+
+```text
+smoke
+pr
+unit
+integration
+playtest
+simulation
+migration
+replay
+performance
+full
+nightly
+release
+```
+
+The profile definition—not an agent's ad-hoc substitute—determines which suites are required for a claimed canonical run.
+
+`blocked` or unexpectedly skipped required suites do not count as passed.
+
+## 48.4 Merge gate
+
+Distinguish:
+
+```text
+implementation_ready
+    code/tests/docs/migrations are prepared
+
+execution_verified
+    exact-commit evidence exists
+    required profile ran
+    mandatory suites passed
+    disallowed skips/blocks are absent
+
+mergeable
+    implementation_ready
+    + execution_verified
+    + review/policy requirements
+```
+
+Default expectations:
+
+- behavior-changing PR -> `pr` evidence;
+- persistence/content interpretation changes -> `pr` plus relevant `migration`/`replay` evidence;
+- performance claims -> targeted `performance` evidence;
+- release candidate -> strict `release` evidence.
+
+Documentation-only exceptions may be defined by merge policy where runtime execution cannot be affected.
+
+## 48.5 Failure workflow
+
+Failures must be useful to a remote agent without requiring local-machine access.
+
+Preserve, as applicable:
+
+```text
+exact failing command/suite
+exit code and counts
+scenario/simulation ID
+seed bundle
+rules/content/controller/extension versions
+REST/WebSocket transcript
+projection/event sequence information
+canonical hashes
+migration/replay fixture
+logs without secrets
+```
+
+Classify failures as product, test/fixture, environment, flaky/nondeterministic, or performance regression rather than retrying invisibly until green.
+
+## 48.6 Evidence storage
+
+Generated evidence should use a predictable tree such as:
+
+```text
+artifacts/test-evidence/<evidence_id>/
+    evidence.json
+    junit/
+    coverage/
+    playtest/
+    replay/
+    simulation/
+    migration/
+    performance/
+    logs/
+```
+
+Large ephemeral artifacts need not be committed. Durable golden fixtures/regressions are intentionally promoted into the repository when they become part of the test contract.
+
+## 48.7 No fabricated verification
+
+No agent may invent commands, counts, logs, screenshots, green suite status, or local behavior it did not observe.
+
+If execution evidence is unavailable, the correct status is:
+
+```text
+implemented / not executed
+```
+
+or:
+
+```text
+execution evidence unavailable
+required next profile: <profile>
+```
+
+not a guessed pass result.
+
+## 48.8 Roadmap placement
+
+```text
+v0.1
+    TestEvidenceBundle schema
+    canonical profile runner/manifest seam
+    smoke + pr foundations
+    machine-readable suite evidence
+
+v0.2-v0.6
+    timing/controller/combat/spatial/character suites enter canonical profiles
+
+v0.7
+    authoring/session/simulation/migration/replay/full profiles
+    long-form Testing Grounds local execution
+
+v0.8
+    advanced/external controller evidence
+
+v0.9
+    stable test CLI/profile/evidence schemas
+    in-process/local/containerized/authorized-remote targets
+
+v1.0
+    release TestEvidenceBundle is a required release artifact
+```
+
+## 48.9 Release proof
+
+The v1.0 release candidate is not execution-verified until the exact candidate commit has a successful `release` evidence bundle covering the required gameplay acceptance matrix, creator/session/quality acceptance set, migration/replay compatibility, visibility/security, recovery/backup where implemented, simulation/content-quality gates, and the defined performance profile.
+
+A later code change invalidates that release evidence until the required profile is rerun for the new candidate.
