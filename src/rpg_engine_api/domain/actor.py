@@ -17,6 +17,8 @@ class ActorState(BaseModel):
     experience: int = 0
     progression_points: int = 0
     features: list[str] = Field(default_factory=list)
+    currency: int = 10
+    inventory: list[str] = Field(default_factory=list)
     stream_version: int = 0
 
 
@@ -30,6 +32,7 @@ def reduce_actor(state: ActorState | None, event: DomainEvent) -> ActorState:
             max_hp=int(event.payload.get("max_hp", 10)),
             attack_bonus=int(event.payload.get("attack_bonus", 2)),
             defense=int(event.payload.get("defense", 10)),
+            currency=int(event.payload.get("currency", 10)),
             stream_version=event.stream_version,
         )
     if state is None:
@@ -49,4 +52,9 @@ def reduce_actor(state: ActorState | None, event: DomainEvent) -> ActorState:
         next_state.max_hp += int(event.payload.get("max_hp_delta", 0))
         next_state.attack_bonus += int(event.payload.get("attack_bonus_delta", 0))
         next_state.defense += int(event.payload.get("defense_delta", 0))
+    elif event.event_type == "ItemPurchased":
+        next_state.currency = int(event.payload["currency_after"])
+        item_id = str(event.payload["item_id"])
+        next_state.inventory.append(item_id)
+        next_state.inventory.sort()
     return next_state
