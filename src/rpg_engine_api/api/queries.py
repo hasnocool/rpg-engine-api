@@ -19,6 +19,14 @@ async def get_actor(actor_id: str, request: Request) -> dict[str, object]:
         raise HTTPException(status_code=404, detail="actor not found") from exc
 
 
+@router.get("/encounters/{encounter_id}")
+async def get_encounter(encounter_id: str, request: Request) -> dict[str, object]:
+    try:
+        return request.app.state.engine.encounter_projection(encounter_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="encounter not found") from exc
+
+
 @router.get("/actors/{actor_id}/available-actions")
 async def available_actions(actor_id: str, request: Request) -> dict[str, object]:
     try:
@@ -30,18 +38,15 @@ async def available_actions(actor_id: str, request: Request) -> dict[str, object
 
 @router.get("/campaigns/{campaign_id}/events")
 async def campaign_events(campaign_id: str, request: Request) -> dict[str, object]:
-    events = [
-        event.model_dump(mode="json")
-        for event in await request.app.state.engine.store.read_all()
-        if event.campaign_id == campaign_id
-    ]
+    events = [event.model_dump(mode="json") for event in await request.app.state.engine.store.read_all() if event.campaign_id == campaign_id]
     return {"data": events, "meta": {"count": len(events)}}
 
 
 @router.get("/campaigns/{campaign_id}/replay-hash")
 async def replay_hash(campaign_id: str, request: Request) -> dict[str, str]:
     try:
-        value = await request.app.state.engine.canonical_hash(campaign_id)
+        replay = await request.app.state.engine.canonical_hash(campaign_id)
+        live = request.app.state.engine.live_hash(campaign_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="campaign not found") from exc
-    return {"campaign_id": campaign_id, "canonical_hash": value}
+    return {"campaign_id": campaign_id, "canonical_hash": replay, "live_hash": live, "matches_live": str(replay == live).lower()}
