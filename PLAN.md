@@ -106,6 +106,8 @@ Every distributable content record must retain source/license provenance.
 16. **Visibility is enforced server-side before serialization.**
 17. **Definitions and instances are separate.** Content templates are immutable/versioned; campaign state is mutable/event-driven.
 18. **Every core subsystem must define state, commands, events, lifecycle, permissions, replay, failures, migrations, and tests before implementation.**
+19. **Every user-visible gameplay capability must be programmatically playable through public client interfaces.** Unit tests alone do not prove a gameplay feature is complete.
+20. **The end-to-end playtest client must remain thin.** It may discover legal capabilities from the server, but must not duplicate hidden rules to make tests work.
 
 ---
 
@@ -2677,21 +2679,39 @@ Analytics consume a separate event pipeline and are never required for authorita
 
 # 35. Testing strategy
 
+The complete programmatic human-play testing architecture is defined in [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md). That specification is normative for all user-visible gameplay and public-client behavior described by this plan.
+
+Testing uses two complementary levels:
+
+```text
+white-box
+    unit/component/domain tests
+    prove local invariants cheaply
+
+black-box human-play
+    authenticated personas using public REST/WebSocket contracts
+    prove the game is actually playable end to end
+```
+
+A gameplay feature is not fully complete merely because its internal tests pass. When the feature is public/player-visible, a programmatic human-play scenario must be able to discover and exercise it through the same interfaces available to a real client.
+
 ## 35.1 Unit tests
 
 Pure deterministic domain behavior without HTTP/DB dependencies.
 
 ## 35.2 Rules conformance
 
-Maintain a feature matrix mapping every implemented SRD rules/content category to tests and source provenance.
+Maintain a feature matrix mapping every implemented SRD rules/content category to tests, source provenance, and representative human-play scenarios once the category becomes playable.
 
 ## 35.3 Determinism/replay
 
 Run identical command streams twice and compare canonical events/state hashes. Rebuild state from events and compare against live projections.
 
+Human-play failures retain deterministic seed bundles and enough event/projection metadata to reproduce the exact session.
+
 ## 35.4 Creation workflows
 
-Test valid/invalid character and campaign paths, upstream-choice invalidation, higher-level starts, multiclass prerequisites, draft resume/expiry, and campaign restrictions.
+Test valid/invalid character and campaign paths, upstream-choice invalidation, higher-level starts, multiclass prerequisites, draft resume/expiry, campaign restrictions, and full public-client creation journeys.
 
 ## 35.5 Timing/action matrix
 
@@ -2708,9 +2728,13 @@ hybrid
 
 Test interruption, timeout, reconnect, simultaneity, stale commands, and idempotent retries.
 
+Timed tests use injected controllable clocks rather than long real sleeps. Exact deadline boundaries must be testable deterministically.
+
 ## 35.6 Visibility tests
 
 Golden tests ensure player, party, spectator, DM, and service projections never leak unauthorized fields.
+
+Black-box playtests run relevant scenarios under multiple personas so visibility is proven at the serialization/live-delivery boundary, not only inside domain helpers.
 
 ## 35.7 Content compatibility
 
@@ -2728,13 +2752,69 @@ Inject transaction failure, outbox delay, duplicate delivery, projection rebuild
 
 Validate OpenAPI schemas, examples, error codes, auth, pagination, idempotency, WebSocket resume, snapshot+delta, and backpressure behavior.
 
-## 35.11 Property-based testing
+The same public contracts power the programmatic human-play harness.
 
-Use Hypothesis for dice bounds, resource accounting, stream versions, scheduler ordering, effect expiration, progression prerequisites, and invariant checking.
+## 35.11 Property-based and model-based testing
 
-## 35.12 Performance
+Use Hypothesis for dice bounds, resource accounting, stream versions, scheduler ordering, effect expiration, progression prerequisites, inventory conservation, command idempotency, WebSocket acknowledgement/resume state, and invariant checking.
 
-Before v1.0 establish measurable p50/p95/p99 command latency, append throughput, replay throughput, WebSocket fanout, active-campaign capacity, and projection-lag profiles. The benchmark harness is mandatory even if deployment targets differ.
+As capability discovery matures, add generated **available-action walkers** that query legal actions from the server and choose among them using an independent deterministic scenario RNG. These walkers must not become a second rules engine.
+
+## 35.12 Human-play scenario harness
+
+The harness must support:
+
+- typed/versioned scenarios;
+- player, DM, spectator, slow-player, and reconnecting personas;
+- independent authoritative-game and human-behavior seeds;
+- public async REST clients;
+- public WebSocket clients;
+- deterministic think-time/timeout behaviors;
+- controllable simulation and wall clocks in test environments;
+- scenario transcripts;
+- feature/milestone coverage tags;
+- failure replay bundles;
+- multi-client concurrency;
+- reconnect/resync and backpressure scenarios;
+- chaos controls for recoverable infrastructure failures.
+
+The playtest client may understand API schemas and advertised available actions. It must not know hidden combat formulas, secret world state, authoritative dice results, or eligibility rules that a real generic client would not know.
+
+## 35.13 Reference playable world
+
+The small **Testing Grounds** campaign is the canonical integration/playtest fixture and grows with milestones.
+
+```text
+Testing Grounds
+├── Town
+│   ├── Tavern
+│   ├── Merchant
+│   ├── Blacksmith
+│   └── Gate
+└── Forest
+    ├── Road
+    ├── Hidden Path
+    ├── Goblin Camp
+    └── Ruins
+```
+
+It should eventually exercise character creation, membership, movement, perception/discovery, dialogue, quests, inventory, trade, crafting, factions, world events, each timing mode, effects/reactions, progression, reconnect, logging, and deterministic replay.
+
+Maintain at least one long-form journey that feels like an actual campaign session instead of only disconnected subsystem tests.
+
+## 35.14 Coverage manifest
+
+Maintain a machine-readable mapping from each implemented gameplay feature to its unit, integration, and human-play coverage, including relevant timing modes, roles/personas, spatial adapters, negative cases, and replay cases.
+
+No milestone may be declared complete while a required implemented user-visible feature has no public-interface play path unless it is explicitly internal-only.
+
+## 35.15 Bug regression rule
+
+Every player-visible bug fix should add the narrowest durable regression. If a human could observe the bug during normal play, add or extend a human-play scenario unless an existing scenario already catches the failure.
+
+## 35.16 Performance
+
+Before v1.0 establish measurable p50/p95/p99 command latency, append throughput, replay throughput, WebSocket fanout, active-campaign capacity, projection-lag, and playtest-suite profiles. The benchmark harness is mandatory even if deployment targets differ.
 
 ---
 
@@ -2822,7 +2902,12 @@ rpg-engine-api/
 │   ├── replay/
 │   ├── visibility/
 │   ├── migration/
-│   └── simulation/
+│   ├── simulation/
+│   └── playtest/
+│       ├── harness/
+│       ├── scenarios/
+│       ├── fixtures/
+│       └── manifests/
 ├── examples/
 │   ├── terminal_client/
 │   ├── websocket_client/
@@ -2831,6 +2916,8 @@ rpg-engine-api/
 │   ├── architecture/
 │   ├── api/
 │   ├── rules/
+│   ├── testing/
+│   │   └── HUMAN_PLAYTESTING.md
 │   └── decisions/
 ├── migrations/
 ├── PLAN.md
@@ -2838,7 +2925,7 @@ rpg-engine-api/
 └── pyproject.toml
 ```
 
-`PLAN.md` is the single authoritative roadmap. Future architectural changes should update this file and, when the decision is non-trivial or irreversible, add an ADR under `docs/decisions/`.
+`PLAN.md` is the single authoritative roadmap. `docs/testing/HUMAN_PLAYTESTING.md` is the detailed normative implementation specification for the testing requirements in this plan, not a competing roadmap. Future architectural changes should update this file and, when the decision is non-trivial or irreversible, add an ADR under `docs/decisions/`.
 
 ---
 
@@ -2848,7 +2935,7 @@ rpg-engine-api/
 
 ### Goal
 
-Create the smallest authoritative engine capable of accepting typed commands and producing reproducible versioned events.
+Create the smallest authoritative engine capable of accepting typed commands and producing reproducible versioned events, with the first black-box human-play harness capable of proving the public command/replay path.
 
 ### Deliverables
 
@@ -2862,6 +2949,7 @@ Create the smallest authoritative engine capable of accepting typed commands and
 - [ ] command bus.
 - [ ] command envelope/receipt and error taxonomy.
 - [ ] deterministic RNG/dice service.
+- [ ] independent named RNG streams and playtest scenario-behavior seed support.
 - [ ] append-only in-memory event store for tests.
 - [ ] PostgreSQL async event store.
 - [ ] stream versioning.
@@ -2873,10 +2961,21 @@ Create the smallest authoritative engine capable of accepting typed commands and
 - [ ] canonical state hashing.
 - [ ] deterministic replay/golden fixtures.
 - [ ] health/readiness endpoints.
+- [ ] `tests/playtest` harness skeleton.
+- [ ] typed/versioned playtest scenario and step model.
+- [ ] minimal player/DM persona model.
+- [ ] public async REST playtest client once the command API exists.
+- [ ] WebSocket playtest client seam once the live endpoint exists.
+- [ ] controllable test-clock interfaces.
+- [ ] scenario transcript/failure artifact capture.
+- [ ] machine-readable feature coverage manifest format.
+- [ ] `Testing Grounds` fixture skeleton.
+- [ ] v0.1 black-box smoke scenario: create minimal campaign/actor -> public command -> event/projection -> replay -> identical canonical hash.
+- [ ] public-interface idempotent-retry and stale-version conflict scenarios.
 
 ### Exit criteria
 
-Same initial state + content lock + RNG seed + command stream produces byte-equivalent canonical results, and older fixture events can enter the current reader through version seams.
+Same initial state + content lock + RNG seed + command stream produces byte-equivalent canonical results, older fixture events can enter the current reader through version seams, and a black-box programmatic persona can create the minimal supported game state, perform a legal public action, observe the authoritative result, and verify replay without calling domain internals.
 
 ---
 
@@ -2911,10 +3010,16 @@ Make one scheduler authoritative for combat/world events and one action transact
 - [ ] movement action foundation.
 - [ ] deterministic simultaneous-command ordering.
 - [ ] rest/cooldown/regeneration process foundation.
+- [ ] human think-time behavior profiles.
+- [ ] exact deadline-boundary tests using controllable wall clocks.
+- [ ] black-box timeout/forfeit scenario.
+- [ ] black-box action reservation/refund scenario.
+- [ ] multi-persona simultaneous-action scenario.
+- [ ] reconnect-during-decision-window scenario.
 
 ### Exit criteria
 
-One sample action/encounter runs under every supported timing mode without replacing the underlying runtime, with deterministic timeout/reconnect behavior.
+One sample action/encounter runs under every supported timing mode without replacing the underlying runtime, with deterministic timeout/reconnect behavior proven through public-interface playtests without real sleeps.
 
 ---
 
@@ -2946,10 +3051,13 @@ Implement licensed combat foundations through the SRD 5.2.1 rules package.
 - [ ] encounter history queries.
 - [ ] rule-trace debugging.
 - [ ] conformance tests.
+- [ ] complete black-box encounter journey through available-action discovery.
+- [ ] reaction/interrupt/condition public-play scenarios.
+- [ ] combat-log and encounter-cleanup assertions.
 
 ### Exit criteria
 
-A thin client can run a complete basic encounter without embedding combat rules.
+A thin programmatic client can run a complete basic encounter without embedding combat rules, including movement, targeting, reactions, effects/conditions, completion, logs, and deterministic replay.
 
 ---
 
@@ -2975,10 +3083,12 @@ Make mechanics data-driven and provide the primitives needed for classes, spells
 - [ ] grant/revoke semantics.
 - [ ] progression respec policy.
 - [ ] progression graph version/migration seam.
+- [ ] representative black-box ability/resource/effect scenarios.
+- [ ] model-based/generated action-state coverage where practical.
 
 ### Exit criteria
 
-Representative abilities, conditions, class features, and progression choices can be expressed primarily through reusable definitions/effects instead of custom handlers.
+Representative abilities, conditions, class features, and progression choices can be expressed primarily through reusable definitions/effects instead of custom handlers and exercised by a thin public playtest client.
 
 ---
 
@@ -3006,10 +3116,12 @@ Make the server authoritative for space and knowledge without coupling to one cl
 - [ ] exploration/travel commands.
 - [ ] location/fact discovery.
 - [ ] party marching-order/formation foundation.
+- [ ] black-box exploration/movement journeys across multiple spatial adapters.
+- [ ] role/persona visibility and hidden-information playtests.
 
 ### Exit criteria
 
-The same encounter/exploration scene works through at least two spatial adapters, while unauthorized clients receive only visibility-filtered knowledge.
+The same encounter/exploration scene works through at least two spatial adapters, while unauthorized clients receive only visibility-filtered knowledge, proven at the public serialization/live-delivery layer.
 
 ---
 
@@ -3044,10 +3156,14 @@ Support complete API-driven character creation, character sheets, advancement, a
 - [ ] SRD class progression mapped to progression graphs.
 - [ ] custom branching talent trees/respec hooks.
 - [ ] content-lock compatibility tests.
+- [ ] systematic public character-creation scenario matrix.
+- [ ] upstream-choice revalidation playtests.
+- [ ] higher-level/multiclass playtests where supported.
+- [ ] resulting-character playable-action assertions.
 
 ### Exit criteria
 
-A generic client can discover creation choices, create/validate/save/load a complete character, render its sheet and legal actions, and advance it without local rules logic.
+A generic client can discover creation choices, create/validate/save/load a complete character, render its sheet and legal actions, and advance it without local rules logic, with representative legal and invalid creation paths exercised programmatically.
 
 ---
 
@@ -3083,10 +3199,13 @@ Create complete persistent campaigns beyond combat.
 - [ ] crafting/recipes.
 - [ ] game-log and audit-log projections.
 - [ ] role-aware historical queries.
+- [ ] complete campaign-creation public journey.
+- [ ] Testing Grounds long-form town -> social -> quest -> trade -> travel -> encounter -> reward -> progression journey.
+- [ ] crafting/vendor/faction/world-event playtests.
 
 ### Exit criteria
 
-A client can create a campaign from nothing, attach characters, explore/travel/interact/trade/craft, run social/quest/world systems, enter combat, and inspect history entirely through the API.
+A client can create a campaign from nothing, attach characters, explore/travel/interact/trade/craft, run social/quest/world systems, enter combat, and inspect history entirely through the API, with the canonical Testing Grounds journey proving those systems compose correctly.
 
 ---
 
@@ -3109,10 +3228,12 @@ Allow AI/scripted controllers to use the same legal command surface as humans.
 - [ ] controller handoff/reconnect semantics.
 - [ ] external-controller timeout/circuit-breaker policies.
 - [ ] deterministic scripted-controller fixtures.
+- [ ] run applicable human-play scenarios with scripted/AI-controlled actors.
+- [ ] verify AI clients receive no more hidden information/capabilities than permitted.
 
 ### Exit criteria
 
-An encounter and basic living-world loop can operate with AI/scripted NPCs while all actions remain rules-validated, authorized, and replayable.
+An encounter and basic living-world loop can operate with AI/scripted NPCs while all actions remain rules-validated, authorized, replayable, and testable through the same public interfaces used by human personas.
 
 ---
 
@@ -3144,10 +3265,13 @@ Stabilize contracts so clients become presentation layers.
 - [ ] Python SDK.
 - [ ] generated/open SDK contract tests.
 - [ ] reference terminal and WebSocket clients.
+- [ ] run human-play harness against both in-process and real server transport modes.
+- [ ] reconnect/resync/backpressure black-box matrix.
+- [ ] public SDK/reference-client playtest compatibility suite.
 
 ### Exit criteria
 
-A thin client can discover capabilities, create/load a campaign and character, join a session, explore, interact, play encounters, receive live events, reconnect safely, and inspect world/quest/history without embedding SRD logic.
+A thin client can discover capabilities, create/load a campaign and character, join a session, explore, interact, play encounters, receive live events, reconnect safely, and inspect world/quest/history without embedding SRD logic, and the same executable scenarios can validate multiple public client transports.
 
 ---
 
@@ -3179,16 +3303,20 @@ Deliver a stable, reusable, documented API-first RPG simulation platform.
 - [ ] terminal reference client.
 - [ ] release/versioning policy.
 - [ ] complete acceptance matrix below.
+- [ ] executable public-interface implementation of the 76-step v1.0 acceptance matrix.
+- [ ] deterministic failure replay bundles for release human-play scenarios.
+- [ ] full feature coverage manifest with no unexplained user-visible gaps.
+- [ ] release playtest modes covering deterministic full, reconnect/recovery, visibility/security, selected chaos, and migration/replay scenarios.
 
 ### v1.0 success statement
 
-A third-party developer can build a turn-based, timed-turn, ATB-style, real-time-with-pause, or real-time fantasy RPG client using the same server, without modifying the authoritative core or duplicating hidden rules.
+A third-party developer can build a turn-based, timed-turn, ATB-style, real-time-with-pause, or real-time fantasy RPG client using the same server, without modifying the authoritative core or duplicating hidden rules, and the repository can prove that claim programmatically by playing the reference campaign end to end through public interfaces.
 
 ---
 
 # 39. v1.0 end-to-end acceptance matrix
 
-A v1.0 release is not complete until automated reference scenarios prove the following through public interfaces.
+A v1.0 release is not complete until automated reference scenarios prove the following through public interfaces. These steps are **executable acceptance requirements**, not documentation-only examples.
 
 ## Rules/content setup
 
@@ -3321,7 +3449,9 @@ Before implementation, each core subsystem must define:
 - WebSocket/live behavior where relevant;
 - import/export behavior where relevant;
 - automated tests and milestone exit criteria;
-- source/license provenance for distributable content.
+- source/license provenance for distributable content;
+- the programmatic human/client journey that proves the subsystem through public interfaces when user-visible;
+- coverage-manifest entries linking the subsystem to positive, negative, visibility, timing, reconnect, and replay scenarios as applicable.
 
 This checklist applies to every new roadmap item.
 
@@ -3345,7 +3475,12 @@ A milestone is not complete until:
 - [ ] command/event versions remain compatible or migration is documented;
 - [ ] observable failures produce actionable structured logs;
 - [ ] concurrency/idempotency behavior is tested;
-- [ ] milestone exit criteria are demonstrated through public APIs.
+- [ ] milestone exit criteria are demonstrated through public APIs;
+- [ ] every implemented user-visible gameplay capability has an appropriate black-box human-play scenario;
+- [ ] relevant timeout/retry/reconnect behavior is exercised without long real sleeps;
+- [ ] playtest failures capture deterministic seeds/transcripts/replay metadata;
+- [ ] the feature coverage manifest is current;
+- [ ] the playtest client does not duplicate hidden authoritative rules.
 
 ---
 
@@ -3383,6 +3518,11 @@ tests/
     unit/
     determinism/
     replay/
+    playtest/
+        harness/
+        scenarios/
+        fixtures/
+        manifests/
 ```
 
 Prove at minimum:
@@ -3405,9 +3545,16 @@ repeat command with same idempotency key
 
 stale expected stream version
     -> deterministic state_conflict
+
+public playtest client
+    -> creates minimal state
+    -> submits public command
+    -> observes receipt/event/projection
+    -> replays history
+    -> verifies identical canonical hash
 ```
 
-Do not start by importing hundreds of spells, monsters, classes, or items. Prove the runtime seams first.
+Do not start by importing hundreds of spells, monsters, classes, or items. Prove the runtime and human-play testing seams first.
 
 ---
 
@@ -3463,3 +3610,130 @@ without replacing the game-state model, rules runtime, action system, scheduler,
 The central architectural constraint is therefore:
 
 > **The engine understands time, events, actions, readiness, deadlines, resources, effects, space, knowledge, and rules—not one hard-coded notion of a turn or one hard-coded kind of client.**
+
+The corresponding testing constraint is:
+
+> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public API/live protocol and leave behind a reproducible transcript, coverage record, and replayable authoritative history.**
+
+---
+
+# 45. Programmatic human-play testing architecture
+
+This section anchors [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) into the canonical roadmap. The detailed specification may evolve as implementation teaches us more, but the requirements below are architectural constraints.
+
+## 45.1 Public-interface-only gameplay proof
+
+End-to-end gameplay tests act through authenticated public REST/WebSocket interfaces. Direct aggregate calls, DB patches, hidden rules helpers, or test-only gameplay mutations do not count as human-play coverage.
+
+Internal fixture controls may configure the test environment—such as an injected controllable clock—but the simulated player/DM must still perform gameplay through production-equivalent public contracts.
+
+## 45.2 Personas
+
+The harness models at least player, DM/owner, spectator, slow player, reconnecting player, and invalid-action player behavior as features require them. Multi-client scenarios share one authoritative campaign and use async-safe structured concurrency.
+
+## 45.3 Human timing behavior
+
+Scenarios support immediate actions, deterministic think times, just-before-deadline actions, exact-boundary assertions, timeout/no-action, invalid-then-correct actions, reaction accept/decline, disconnect/reconnect, and duplicate/retry behavior.
+
+No test waits through long gameplay durations with `sleep()`. Simulation and wall-clock decision behavior use injectable controllable test clocks while preserving production semantics.
+
+## 45.4 Independent seeds
+
+Authoritative game RNG streams and playtest/human-behavior RNG are independent. A generated player delay/action choice may not alter the next authoritative die, loot roll, or world result.
+
+Every failure records the seed bundle required to reproduce it.
+
+## 45.5 Scenario DSL and transcripts
+
+Use typed/versioned scenario definitions and semantic client steps such as campaign/character creation, query available actions, submit action, move, interact, dialogue choice, quest operation, trade, craft, encounter action, reaction, disconnect/reconnect, replay, and assertions.
+
+Every run can emit a chronological transcript readable like a game session.
+
+## 45.6 Assertions
+
+Human-play scenarios assert transport contracts, player-visible projections, event ordering, logs, hidden-information absence, resource/inventory invariants, timeout behavior, reconnect behavior, and replay state hashes.
+
+Golden snapshots should cover stable meaningful contracts rather than incidental formatting.
+
+## 45.7 Coverage manifest
+
+Maintain a machine-readable feature coverage manifest mapping roadmap features to unit/integration/human-play scenarios plus timing modes, roles/personas, spatial adapters, negative cases, and replay cases.
+
+This manifest is part of milestone/release evidence.
+
+## 45.8 Failure replay bundles
+
+A failed scenario captures scenario/version, repository/engine revision, content lock, seed bundle, personas, executed steps, relevant REST receipts, WebSocket events, projection snapshots, sequence range, canonical hashes, and assertion failure—without secrets.
+
+The desired workflow is effectively:
+
+```text
+failure artifact -> one deterministic local replay
+```
+
+## 45.9 Generated/model-based players
+
+In addition to curated journeys, generated walkers may query available actions and choose valid inputs using a separate deterministic scenario RNG. Near-valid invalid-action generators and Hypothesis state machines explore rejection paths and invariants.
+
+Generated clients must use advertised server capabilities rather than implementing hidden rules.
+
+## 45.10 Chaos and recovery
+
+Selected scenarios may inject network disconnects, HTTP retries, duplicate delivery, slow consumers, process restart, DB reconnect, outbox delay, projection lag, and auth/session expiration. The infrastructure can be disturbed, but authoritative game rules cannot be bypassed.
+
+## 45.11 CI modes
+
+The harness should support intents such as:
+
+```text
+smoke
+pr
+full
+nightly
+release
+fuzz
+chaos
+```
+
+PR runs combine affected feature-tag scenarios with mandatory core regressions. Scheduled full runs prevent selective-test blind spots. Release runs include the complete deterministic gameplay journey, migration/replay, visibility/security, reconnect/recovery, and selected chaos/performance gates.
+
+Exact runtime budgets are measured and tuned from evidence rather than guessed in advance.
+
+## 45.12 Canonical long-form campaign journey
+
+`Testing Grounds` grows into one continuous playable scenario:
+
+```text
+discover/install rules
+    -> create campaign
+    -> configure timing
+    -> add player
+    -> create character
+    -> join party/session
+    -> enter town
+    -> talk to NPC
+    -> accept quest
+    -> acquire/trade item
+    -> travel/explore
+    -> discover hidden information
+    -> enter encounter
+    -> move/attack/use ability
+    -> react
+    -> intentionally miss a timed turn
+    -> complete encounter
+    -> collect reward
+    -> progress quest
+    -> advance/unlock feature
+    -> disconnect/reconnect
+    -> inspect logs/history
+    -> replay campaign
+    -> verify canonical state
+```
+
+Subsystem-specific scenarios still exist, but this long-form journey proves the systems compose as one actual game.
+
+## 45.13 v1.0 release requirement
+
+The 76-step acceptance matrix in Section 39 must be represented by executable scenario(s) using public interfaces. Passing prose review is not sufficient.
+
+A release candidate must be able to produce artifacts showing exactly which acceptance steps, roles, timing modes, and feature entries were exercised and must reproduce any failure from its captured scenario/seed/history bundle.
