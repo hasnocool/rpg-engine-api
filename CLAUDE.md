@@ -2,12 +2,13 @@
 
 Before making changes, read and follow:
 
-1. [`AGENTS.md`](AGENTS.md) — repository-wide agent execution policy, current implementation contract, testing gates, and anti-drift rules.
+1. [`AGENTS.md`](AGENTS.md) — repository-wide agent execution policy and current implementation contract.
 2. [`PLAN.md`](PLAN.md) — the single authoritative architecture, roadmap, milestone exit criteria, and definition of done.
-3. [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) — normative black-box human-play testing specification for proving gameplay through public REST/WebSocket interfaces.
+3. [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) — required public-interface human-play testing architecture.
+4. [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md) — required baseline deterministic NPC/creature controller design.
 
-Do not create a separate Claude-specific architecture, roadmap, or testing framework. If these documents appear to conflict, `PLAN.md` controls product architecture, `AGENTS.md` controls agent workflow, and the human-play specification controls how player-visible behavior is proven end to end.
+Do not create a separate Claude-specific architecture, roadmap, testing system, or NPC AI design. If these files appear to conflict, `PLAN.md` controls architecture and milestone scope, while `AGENTS.md` controls repository-wide agent workflow.
 
-Work from the earliest incomplete relevant milestone unless the user explicitly directs otherwise. Preserve deterministic command/event architecture, server authority, replay/versioning, licensing boundaries, non-blocking async behavior, and role-aware visibility.
+Work from the earliest incomplete relevant milestone unless the user explicitly directs otherwise. Preserve deterministic command/event architecture, server authority, replay/versioning, licensing boundaries, non-blocking async behavior, public-interface playtesting, and controller visibility boundaries.
 
-For any user-visible gameplay change, add or extend a programmatic human-play scenario. The playtest persona must use the public API/live protocol rather than calling domain internals or duplicating hidden rules. Test timing with controllable clocks instead of real sleeps, capture deterministic seeds/failure artifacts, and add player-visible bug regressions to the human-play suite.
+For ordinary non-human actors before advanced AI work, use the planned `SimpleNpcController`: no LLM requirement, no omniscient state, no direct mutations, deterministic one-step behavior profiles, and all selected actions through the same normal typed command/rules path as human actors.
