@@ -9,19 +9,14 @@ import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .evidence import (
-    ArtifactRef,
-    EnvironmentEvidence,
-    SuiteEvidence,
-    SuiteStatus,
-    TestEvidenceBundle,
-)
+from .evidence import ArtifactRef, EnvironmentEvidence, SuiteEvidence, SuiteStatus, TestEvidenceBundle
 
 ROOT = Path(__file__).resolve().parents[3]
 ARTIFACT_ROOT = ROOT / "artifacts" / "test-evidence"
 
 SUITES: dict[str, list[str]] = {
-    "unit": ["tests/unit"],
+    "unit": ["tests/unit", "tests/controllers"],
+    "playtest_p0": ["tests/playtest/test_p0_p1.py"],
     "playtest": ["tests/playtest"],
     "integration": ["tests/integration"],
     "replay": ["tests/replay"],
@@ -31,7 +26,7 @@ SUITES: dict[str, list[str]] = {
 }
 
 PROFILES: dict[str, list[str]] = {
-    "smoke": ["unit", "playtest"],
+    "smoke": ["unit", "playtest_p0"],
     "pr": ["unit", "replay", "playtest"],
     "unit": ["unit"],
     "integration": ["integration"],
@@ -48,9 +43,7 @@ PROFILES: dict[str, list[str]] = {
 
 def _git(*args: str, default: str = "unknown") -> str:
     try:
-        result = subprocess.run(
-            ["git", *args], cwd=ROOT, capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True)
     except (OSError, subprocess.CalledProcessError):
         return default
     return result.stdout.strip() or default
@@ -62,13 +55,7 @@ def _fingerprint(text: str) -> str:
 
 def _dependency_fingerprint() -> str:
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "freeze"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = subprocess.run([sys.executable, "-m", "pip", "freeze"], cwd=ROOT, capture_output=True, text=True, check=True)
         return _fingerprint(result.stdout)
     except (OSError, subprocess.CalledProcessError):
         return "unavailable"
@@ -76,9 +63,7 @@ def _dependency_fingerprint() -> str:
 
 def _postgres_version() -> str | None:
     try:
-        result = subprocess.run(
-            ["psql", "--version"], capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(["psql", "--version"], capture_output=True, text=True, check=True)
         return result.stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None
@@ -129,19 +114,7 @@ def _run_suite(name: str, evidence_dir: Path) -> SuiteEvidence:
         status = SuiteStatus.BLOCKED
     else:
         status = SuiteStatus.PASSED
-    return SuiteEvidence(
-        name=name,
-        command=command,
-        status=status,
-        exit_code=result.returncode,
-        duration_seconds=round(duration, 3),
-        passed=passed,
-        failed=failed,
-        skipped=skipped,
-        errors=errors,
-        junit_path=str(junit_path.relative_to(ROOT)) if junit_path.exists() else None,
-        log_path=str(log_path.relative_to(ROOT)),
-    )
+    return SuiteEvidence(name=name, command=command, status=status, exit_code=result.returncode, duration_seconds=round(duration, 3), passed=passed, failed=failed, skipped=skipped, errors=errors, junit_path=str(junit_path.relative_to(ROOT)) if junit_path.exists() else None, log_path=str(log_path.relative_to(ROOT)))
 
 
 def main() -> None:
@@ -150,7 +123,6 @@ def main() -> None:
     profile = sys.argv[1]
     if profile not in PROFILES:
         raise SystemExit(f"unknown profile {profile!r}; profiles: {', '.join(PROFILES)}")
-
     commit = _git("rev-parse", "HEAD")
     branch = _git("branch", "--show-current", default="") or None
     dirty = bool(_git("status", "--porcelain", default=""))
@@ -159,20 +131,9 @@ def main() -> None:
     evidence_dir = ARTIFACT_ROOT / evidence_id
     for child in ("junit", "logs", "coverage", "playtest", "replay", "simulation", "migration", "performance"):
         (evidence_dir / child).mkdir(parents=True, exist_ok=True)
-
-    bundle = TestEvidenceBundle(
-        evidence_id=evidence_id,
-        repository="hasnocool/rpg-engine-api",
-        commit_sha=commit,
-        branch=branch,
-        dirty_worktree=dirty,
-        test_profile=profile,
-        environment=_environment(),
-    )
+    bundle = TestEvidenceBundle(evidence_id=evidence_id, repository="hasnocool/rpg-engine-api", commit_sha=commit, branch=branch, dirty_worktree=dirty, test_profile=profile, environment=_environment())
     for suite_name in PROFILES[profile]:
-        evidence = _run_suite(suite_name, evidence_dir)
-        bundle.suites.append(evidence)
-
+        bundle.suites.append(_run_suite(suite_name, evidence_dir))
     if any(item.status == SuiteStatus.FAILED for item in bundle.suites):
         bundle.overall_status = SuiteStatus.FAILED
     elif any(item.status == SuiteStatus.BLOCKED for item in bundle.suites):
@@ -180,32 +141,12 @@ def main() -> None:
     else:
         bundle.overall_status = SuiteStatus.PASSED
     bundle.finished_at = datetime.now(UTC)
-    bundle.summary = {
-        "passed_suites": sum(item.status == SuiteStatus.PASSED for item in bundle.suites),
-        "failed_suites": sum(item.status == SuiteStatus.FAILED for item in bundle.suites),
-        "blocked_suites": sum(item.status == SuiteStatus.BLOCKED for item in bundle.suites),
-    }
-    bundle.artifacts.extend(
-        [ArtifactRef(kind="junit", path=item.junit_path) for item in bundle.suites if item.junit_path]
-    )
-
+    bundle.summary = {"passed_suites": sum(item.status == SuiteStatus.PASSED for item in bundle.suites), "failed_suites": sum(item.status == SuiteStatus.FAILED for item in bundle.suites), "blocked_suites": sum(item.status == SuiteStatus.BLOCKED for item in bundle.suites)}
+    bundle.artifacts.extend([ArtifactRef(kind="junit", path=item.junit_path) for item in bundle.suites if item.junit_path])
     evidence_json = evidence_dir / "evidence.json"
     evidence_json.write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
     summary = evidence_dir / "summary.md"
-    summary.write_text(
-        "# Test evidence\n\n"
-        f"- commit: `{commit}`\n"
-        f"- profile: `{profile}`\n"
-        f"- status: **{bundle.overall_status.value}**\n"
-        f"- dirty worktree: `{dirty}`\n\n"
-        + "\n".join(
-            f"- {item.name}: {item.status.value} "
-            f"(passed={item.passed}, failed={item.failed}, skipped={item.skipped}, errors={item.errors})"
-            for item in bundle.suites
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    summary.write_text("# Test evidence\n\n" f"- commit: `{commit}`\n" f"- profile: `{profile}`\n" f"- status: **{bundle.overall_status.value}**\n" f"- dirty worktree: `{dirty}`\n\n" + "\n".join(f"- {item.name}: {item.status.value} (passed={item.passed}, failed={item.failed}, skipped={item.skipped}, errors={item.errors})" for item in bundle.suites) + "\n", encoding="utf-8")
     print(summary.read_text(encoding="utf-8"))
     print(f"evidence: {evidence_json.relative_to(ROOT)}")
     if bundle.overall_status != SuiteStatus.PASSED:

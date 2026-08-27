@@ -43,10 +43,10 @@ async def campaign_events(campaign_id: str, request: Request) -> dict[str, objec
 
 
 @router.get("/campaigns/{campaign_id}/replay-hash")
-async def replay_hash(campaign_id: str, request: Request) -> dict[str, str]:
+async def replay_hash(campaign_id: str, request: Request) -> dict[str, object]:
     try:
         replay = await request.app.state.engine.canonical_hash(campaign_id)
         live = request.app.state.engine.live_hash(campaign_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="campaign not found") from exc
-    return {"campaign_id": campaign_id, "canonical_hash": replay, "live_hash": live, "matches_live": str(replay == live).lower()}
+    return {"campaign_id": campaign_id, "canonical_hash": replay, "live_hash": live, "matches_live": replay == live}

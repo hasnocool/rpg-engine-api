@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from rpg_engine_api.domain.events import DomainEvent
 
@@ -20,6 +20,7 @@ class EncounterantState(BaseModel):
     stamina: int = 1
     guard: int = 0
 
+    @computed_field
     @property
     def alive(self) -> bool:
         return self.hp > 0
@@ -37,6 +38,7 @@ class EncounterState(BaseModel):
     stream_version: int = 0
     winner_side: str | None = None
 
+    @computed_field
     @property
     def current_actor_id(self) -> str | None:
         if self.status != EncounterStatus.ACTIVE or not self.turn_order:
