@@ -2,13 +2,16 @@
 
 Before making changes, read and follow:
 
-1. [`AGENTS.md`](AGENTS.md) — repository-wide agent execution policy and current implementation contract.
-2. [`PLAN.md`](PLAN.md) — the single authoritative architecture, roadmap, milestone exit criteria, and definition of done.
-3. [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) — required public-interface human-play testing architecture.
-4. [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md) — required baseline deterministic NPC/creature controller design.
+1. [`PLAN.md`](PLAN.md) — canonical architecture, roadmap, milestone exit criteria, and definition of done.
+2. [`AGENTS.md`](AGENTS.md) — repository-wide execution policy and spec-routing rules.
+3. Relevant normative specs for the task:
+   - [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md)
+   - [`docs/testing/SIMULATION_QUALITY_LAB.md`](docs/testing/SIMULATION_QUALITY_LAB.md)
+   - [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md)
+   - [`docs/authoring/CONTENT_AUTHORING.md`](docs/authoring/CONTENT_AUTHORING.md)
+   - [`docs/operations/DM_SESSION_OPERATIONS.md`](docs/operations/DM_SESSION_OPERATIONS.md)
+   - [`docs/extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md`](docs/extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md)
 
-Do not create a separate Gemini-specific architecture, roadmap, testing system, or NPC AI design. If these files appear to conflict, `PLAN.md` controls architecture and milestone scope, while `AGENTS.md` controls repository-wide agent workflow.
+Do not create a Gemini-specific competing roadmap, creator architecture, testing system, NPC AI, plugin boundary, or migration model. `PLAN.md` controls architecture and `AGENTS.md` controls workflow.
 
-Work from the earliest incomplete relevant milestone unless the user explicitly directs otherwise. Preserve deterministic command/event architecture, server authority, replay/versioning, licensing boundaries, non-blocking async behavior, public-interface playtesting, and controller visibility boundaries.
-
-For ordinary non-human actors before advanced AI work, use the planned `SimpleNpcController`: no LLM requirement, no omniscient state, no direct mutations, deterministic one-step behavior profiles, and all selected actions through the same normal typed command/rules path as human actors.
+Preserve server authority, deterministic command/event/replay semantics, visibility boundaries, non-blocking async behavior, data-only ordinary content packs, explicit trusted extensions, immutable published content versions, branch-based restore semantics, and public-interface playtesting.
