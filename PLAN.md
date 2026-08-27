@@ -7,11 +7,14 @@
 **Primary API:** FastAPI REST + WebSockets  
 **Architecture:** headless, deterministic, event-driven RPG simulation platform  
 **Initial compatible rules package:** SRD 5.2.1-based ruleset  
-**Canonical planning document:** this file
+**Canonical planning document:** this file  
+**Executable implementation ledger:** [`TODO.md`](TODO.md)
 
 The goal is to let any client—Godot, Unity, browser, mobile, TUI, SSH, Discord-style UI, AI narrator, automation service, creator tool, simulation worker, or another game engine—create, author, test, operate, and play a D&D-style RPG by treating this API as the authoritative game simulation.
 
 The engine owns the rules and state. Clients discover capabilities, submit commands, receive events, render projections, and use explicit authoring/operations APIs rather than bypassing the authoritative runtime.
+
+`PLAN.md` defines architecture and roadmap. `TODO.md` translates that roadmap into the ordered, checkable execution queue and cumulative playability gates. When the two disagree, this plan wins and the TODO must be corrected.
 
 ---
 
@@ -44,7 +47,8 @@ The authoritative server owns:
 - lobbies, invitations, ready checks, live DM/session operations, checkpoints/branches, recaps, and journals;
 - simulation, content-quality, reachability, balance-evidence, and regression tooling;
 - an explicit boundary between data-only content packs and trusted executable rules extensions;
-- a canonical local/CI test execution contract that produces commit-bound machine-readable evidence for merge and release gates.
+- a canonical local/CI test execution contract that produces commit-bound machine-readable evidence for merge and release gates;
+- a cumulative executable TODO whose completion path continually produces something a human-facing client can actually play.
 
 Clients should primarily:
 
@@ -123,6 +127,8 @@ Every distributable content record must retain source/license provenance.
 27. **Content upgrades are explicit.** Active campaigns do not silently receive mechanic-changing pack/extension revisions; upgrades use diff, compatibility, impact, migration dry-run, checkpoint, activation, and replay verification.
 28. **Execution claims require evidence.** A remote agent may design or inspect tests, but claims that suites passed locally require commit-bound local-agent or CI evidence.
 29. **Verification is revision-specific.** Green evidence for one commit does not automatically verify a later code-changing commit; blocked/skipped required suites are never silently counted as passed.
+30. **Implementation follows the executable TODO.** Unless explicitly redirected, agents work the earliest unchecked, unblocked item in the active roadmap phase and update TODO status from objective implementation/evidence only.
+31. **Playability is cumulative.** A later milestone must not silently break an earlier P0–P8 playable gate; such a break is a product regression.
 
 ---
 
@@ -693,6 +699,8 @@ Testing includes unit/domain/controller tests, rules conformance, deterministic 
 
 Execution verification is separate from test design. Local-agent/CI evidence must bind the exact commit, canonical test profile, environment, suite results, and relevant artifacts. Missing, blocked, or stale evidence cannot be represented as a green execution result.
 
+The executable checklist and playability ladder in [`TODO.md`](TODO.md) are part of test planning: each phase identifies the public journey and canonical local profile that prove it.
+
 ---
 
 # 36. Initial technical stack
@@ -761,11 +769,12 @@ rpg-engine-api/
 │   └── decisions/
 ├── migrations/
 ├── PLAN.md
+├── TODO.md
 ├── AGENTS.md
 └── pyproject.toml
 ```
 
-`PLAN.md` is the canonical roadmap. Detailed specifications above are normative elaborations of this plan rather than competing roadmaps.
+`PLAN.md` is the canonical roadmap. Detailed specifications above are normative elaborations of this plan. `TODO.md` is the executable implementation ledger and must remain consistent with both.
 
 ---
 
@@ -799,11 +808,12 @@ Create the smallest authoritative engine capable of typed commands -> reproducib
 - machine-readable JUnit/evidence artifact output;
 - ContentQualityReport/CompatibilityReport schema seams;
 - Testing Grounds fixture skeleton;
-- black-box minimal command/replay/idempotency/conflict scenarios.
+- black-box minimal command/replay/idempotency/conflict scenarios;
+- complete `TODO.md` Phase A through playability gates P0/P1.
 
 ### Exit criteria
 
-The minimal public command path is deterministic/replayable; an actor can carry a versioned controller assignment; published definitions and trusted-extension metadata have stable version seams; the playtest/quality artifact foundations exist without later architecture rewrites; and a local executor can run the initial canonical profile for an exact commit and produce machine-readable evidence without remote agents fabricating execution claims.
+The minimal public command path is deterministic/replayable; an actor can carry a versioned controller assignment; published definitions and trusted-extension metadata have stable version seams; the playtest/quality artifact foundations exist without later architecture rewrites; a local executor can run the initial canonical profile for an exact commit and produce machine-readable evidence without remote agents fabricating execution claims; and TODO P0/P1 are demonstrated rather than merely coded.
 
 ---
 
@@ -811,7 +821,7 @@ The minimal public command path is deterministic/replayable; an actor can carry 
 
 Add the full scheduler/timing modes, universal action lifecycle, deadlines/timeouts, controller eligibility hooks, movement/rest/cooldown foundations, exact controllable-clock playtests, disconnect/control-handoff timing seams, and include those suites in the canonical local profiles.
 
-Exit when one representative action works deterministically under every timing mode and controller eligibility/timeout/reconnect paths require no blocking sleeps or polling, with matching local/CI evidence for the candidate revision before the milestone execution gate is satisfied.
+Exit when one representative action works deterministically under every timing mode and controller eligibility/timeout/reconnect paths require no blocking sleeps or polling, with matching local/CI evidence for the candidate revision before the milestone execution gate is satisfied and `TODO.md` Phase B complete.
 
 ---
 
@@ -819,7 +829,7 @@ Exit when one representative action works deterministically under every timing m
 
 Add SRD combat foundations, encounter runtime lifecycle, `EncounterTemplate` authoring schema, participant groups/waves/objectives/rewards/scaling foundation, `SimpleNpcController` combat MVP, behavior profiles/reactions/fallbacks, encounter smoke simulation, human-vs-NPC playtest, and deterministic AI-vs-AI simulation.
 
-Exit when a creator can define/validate a basic encounter template and a human-facing test client can instantiate/play it against autonomous enemies through public interfaces with deterministic replay, proven by the required local profile/evidence bundle for the exact revision.
+Exit when a creator can define/validate a basic encounter template and a human-facing test client can instantiate/play it against autonomous enemies through public interfaces with deterministic replay, proven by the required local profile/evidence bundle for the exact revision and `TODO.md` P2 playable-combat gate.
 
 ---
 
@@ -827,7 +837,7 @@ Exit when a creator can define/validate a basic encounter template and a human-f
 
 Add data-driven effects/features/resources/abilities/conditions/progression, authoring schemas for those definitions, safe declarative DSL expansion, trusted extension points for predicates/effect operations if required, simulation metrics for abilities/resources/effects, and generated-action exploration.
 
-Exit when representative mechanics can be authored/validated/published, exercised by humans/NPCs, and inspected through simulation without custom hidden handlers, with execution evidence for relevant integration/playtest/simulation suites.
+Exit when representative mechanics can be authored/validated/published, exercised by humans/NPCs, and inspected through simulation without custom hidden handlers, with execution evidence for relevant integration/playtest/simulation suites and the P2 slice still working.
 
 ---
 
@@ -835,7 +845,7 @@ Exit when representative mechanics can be authored/validated/published, exercise
 
 Add spatial adapters, path/LOS/cover/terrain/objects/containers/hazards/scenes/discovery, controller-safe perception/movement, world/location/scene/object authoring schemas, optional trusted spatial adapter provider seam, and spatial/perception simulation invariants.
 
-Exit when one exploration/encounter fixture works across multiple spatial adapters and clients/controllers receive only permitted knowledge, verified by the canonical local profile and visibility/playtest evidence.
+Exit when one exploration/encounter fixture works across multiple spatial adapters and clients/controllers receive only permitted knowledge, verified by the canonical local profile and visibility/playtest evidence, and `TODO.md` P3 is complete.
 
 ---
 
@@ -843,7 +853,7 @@ Exit when one exploration/encounter fixture works across multiple spatial adapte
 
 Add full ruleset-driven character creator/runtime, higher-level/multiclass/advancement/import-export, authoring schemas for classes/species/backgrounds/templates/progression, systematic creator/playtest matrices, and progression reachability analysis.
 
-Exit when generic clients and creator tools can discover, author, validate, create, and advance representative characters without local hidden rules, with local evidence for creation/playtest/reachability paths.
+Exit when generic clients and creator tools can discover, author, validate, create, and advance representative characters without local hidden rules, with local evidence for creation/playtest/reachability paths, and `TODO.md` P4 is complete.
 
 ---
 
@@ -870,9 +880,10 @@ Add:
 - quest/dialogue/world/content reachability analysis;
 - creator-facing ContentQualityReport;
 - local-agent `playtest`, `simulation`, `migration`, `replay`, `full`, and long-form Testing Grounds profile integration;
-- Testing Grounds long-form town -> social -> quest -> trade -> travel -> autonomous encounter -> reward -> progression -> checkpoint/session-close journey.
+- Testing Grounds long-form town -> social -> quest -> trade -> travel -> autonomous encounter -> reward -> progression -> checkpoint/session-close journey;
+- `TODO.md` P5 and P6 playable campaign/creator gates.
 
-Exit when a creator can author/publish a small campaign content set, a DM can host/operate a complete session, and the quality lab can validate/reachability-test/simulate the reference content without bypassing the real runtime, with reproducible local evidence for the composed workflow.
+Exit when a creator can author/publish a small campaign content set, a DM can host/operate a complete session, and the quality lab can validate/reachability-test/simulate the reference content without bypassing the real runtime, with reproducible local evidence for the composed workflow and P5/P6 complete.
 
 ---
 
@@ -880,7 +891,7 @@ Exit when a creator can author/publish a small campaign content set, a DM can ho
 
 Build richer utility/goals/memory/schedules/external/LLM controllers on the proven baseline. Add controller comparisons in the simulation lab, explicit external-controller circuit breakers/fallbacks, AI DM command surfaces, trusted controller-provider extension seams, and executor evidence for external-controller/fallback scenarios.
 
-`SimpleNpcController` remains the deterministic baseline/reference/fallback.
+`SimpleNpcController` remains the deterministic baseline/reference/fallback and all earlier playable gates remain regression requirements.
 
 ---
 
@@ -896,9 +907,10 @@ Stabilize `/api/v1`, OpenAPI/error/version/deprecation contracts, auth, discover
 - content semantic diff/compatibility/impact/migration-preview APIs;
 - controller assignment/status surfaces without leaking hidden AI state;
 - stable local test CLI/profile manifests and `TestEvidenceBundle` schema;
-- execution targets for in-process, local-server, containerized, and authorized remote test deployments.
+- execution targets for in-process, local-server, containerized, and authorized remote test deployments;
+- `TODO.md` P7 content-evolution flow.
 
-Exit when the same executable scenarios can validate public game clients, creator workflows, session operations, simulation tooling, content-upgrade preview, and canonical test profiles through stable contracts.
+Exit when the same executable scenarios can validate public game clients, creator workflows, session operations, simulation tooling, content-upgrade preview, and canonical test profiles through stable contracts, with P7 complete.
 
 ---
 
@@ -908,7 +920,7 @@ Deliver stable core/game/client/controller schemas, SRD-compatible rules package
 
 ### v1.0 success statement
 
-A third-party developer can build a supported client; a creator can author/validate/publish content; a DM can host and recover sessions; non-human actors can play autonomously; content can be simulated and quality-checked; campaigns can safely evolve content versions; and release claims are backed by reproducible execution evidence—all without modifying the authoritative core, duplicating hidden rules, or destroying historical replayability.
+A third-party developer can build a supported client; a creator can author/validate/publish content; a DM can host and recover sessions; non-human actors can play autonomously; content can be simulated and quality-checked; campaigns can safely evolve content versions; and release claims are backed by reproducible execution evidence—all without modifying the authoritative core, duplicating hidden rules, or destroying historical replayability. `TODO.md` P8 is the executable release-quality gate.
 
 ---
 
@@ -916,7 +928,7 @@ A third-party developer can build a supported client; a creator can author/valid
 
 The existing gameplay acceptance matrix remains mandatory and executable. It must cover rules/content setup, campaign/lobby/session creation, character creation, exploration/world interaction, social/quest systems, encounter/timing/controllers, progression, logs/history/replay, live sync, and content/controller evolution/recovery.
 
-In addition, v1.0 release scenarios must demonstrate the creator/operations/quality/extension acceptance set in Section 47 and be included in the exact release candidate's `release` TestEvidenceBundle.
+In addition, v1.0 release scenarios must demonstrate the creator/operations/quality/extension acceptance set in Section 47, the cumulative P0–P8 playability requirements in `TODO.md`, and be included in the exact release candidate's `release` TestEvidenceBundle.
 
 ---
 
@@ -942,6 +954,7 @@ A subsystem is not considered planned merely because a noun/interface exists. Be
 - trusted extension implications where relevant;
 - automated tests/milestone exit criteria;
 - canonical local test profile(s) and required evidence artifacts;
+- its ordered `TODO.md` implementation items and playability impact;
 - source/license provenance for distributable content;
 - public human/client journey for user-visible behavior;
 - coverage-manifest entries for positive/negative/visibility/timing/reconnect/controller/replay cases.
@@ -950,15 +963,15 @@ A subsystem is not considered planned merely because a noun/interface exists. Be
 
 # 41. Definition of done for every milestone
 
-A milestone is not complete until applicable code is typed/non-blocking; required unit/integration/determinism/replay/visibility/controller tests exist; public schemas are documented/versioned; migrations/upcasters are included; licensing/provenance is correct; command/event/controller/content compatibility is preserved; concurrency/idempotency is tested; user-visible features have black-box play scenarios; timing uses controllable clocks; failures are reproducible; coverage manifests are current; creator-facing schemas validate/publish correctly; simulation/reachability checks exist where the feature is content-driven; and extension/content migrations are dry-run/replay-tested where interpretation changes.
+A milestone is not complete until applicable code is typed/non-blocking; required unit/integration/determinism/replay/visibility/controller tests exist; public schemas are documented/versioned; migrations/upcasters are included; licensing/provenance is correct; command/event/controller/content compatibility is preserved; concurrency/idempotency is tested; user-visible features have black-box play scenarios; timing uses controllable clocks; failures are reproducible; coverage manifests are current; creator-facing schemas validate/publish correctly; simulation/reachability checks exist where the feature is content-driven; extension/content migrations are dry-run/replay-tested where interpretation changes; the corresponding TODO phase is objectively complete; and its cumulative playability gate still passes.
 
-For the **execution gate**, the required local-agent/CI `TestEvidenceBundle` must match the candidate commit and canonical profile. If evidence is unavailable, blocked, stale, or missing required suites, the work may be described as implemented but not execution-verified and must not be represented as locally passing.
+For the **execution gate**, the required local-agent/CI `TestEvidenceBundle` must match the candidate commit and canonical profile. If evidence is unavailable, blocked, stale, or missing required suites, the work may be described as implemented but not execution-verified and must not be represented as locally passing. The matching TODO verification checkbox stays unchecked or `[AWAITING EVIDENCE]`.
 
 ---
 
 # 42. First implementation slice
 
-The first slice remains intentionally small:
+The first slice remains intentionally small and maps directly to `TODO.md` Phase A:
 
 ```text
 app/config
@@ -975,6 +988,8 @@ quality/compatibility artifact schemas
 
 Prove CreateCampaign/CreateActor, controller assignment, deterministic dice, replay hash, idempotent retry, stale stream conflict, and one public playtest command/replay path. The local executor should be able to run the initial `smoke`/`pr` profile and emit commit-bound machine-readable evidence. Do not import large content catalogs, implement advanced AI, or build the full Creator Studio yet.
 
+The first development objective is not “finish all infrastructure”; it is to reach P0/P1 quickly while keeping the architecture correct, then build toward P2—the first game-like human-vs-autonomous-NPC combat slice.
+
 ---
 
 # 43. Deliberately post-v1.0 work
@@ -985,11 +1000,11 @@ Explicit future scope includes distributed zones/shards, large-world cross-proce
 
 # 44. Long-term product goal
 
-The engine should support multiple timing modes and replaceable controllers without replacing the game-state model, rules runtime, action system, scheduler, persistence, client API, authoring formats, replay model, or evidence contract.
+The engine should support multiple timing modes and replaceable controllers without replacing the game-state model, rules runtime, action system, scheduler, persistence, client API, authoring formats, replay model, evidence contract, or playable-product execution path.
 
 > **The engine understands time, events, actions, resources, effects, space, knowledge, rules, content, sessions, and replaceable controllers—not one hard-coded turn system, client, authoring UI, or AI implementation.**
 
-> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public interfaces; if content can be authored, it must be validateable/testable/versionable; if a campaign evolves, old history must remain interpretable; if a change is claimed to pass locally, that claim must be backed by revision-matched machine-produced evidence.**
+> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public interfaces; if content can be authored, it must be validateable/testable/versionable; if a campaign evolves, old history must remain interpretable; if a change is claimed to pass locally, that claim must be backed by revision-matched machine-produced evidence; and the implementation sequence must continuously converge on and preserve a playable game.**
 
 ---
 
@@ -1347,3 +1362,127 @@ v1.0
 The v1.0 release candidate is not execution-verified until the exact candidate commit has a successful `release` evidence bundle covering the required gameplay acceptance matrix, creator/session/quality acceptance set, migration/replay compatibility, visibility/security, recovery/backup where implemented, simulation/content-quality gates, and the defined performance profile.
 
 A later code change invalidates that release evidence until the required profile is rerun for the new candidate.
+
+---
+
+# 49. Executable TODO and cumulative playability architecture
+
+[`TODO.md`](TODO.md) is the canonical **execution ledger** for this plan. It expands roadmap milestones into checkable implementation tasks, local test profiles, and cumulative playable-product gates.
+
+## 49.1 Authority and update rules
+
+```text
+PLAN.md
+    defines architecture and roadmap
+        ↓
+normative docs/
+    define subsystem contracts
+        ↓
+TODO.md
+    defines ordered implementation/checklist work
+        ↓
+TestEvidenceBundle
+    proves what actually executed
+```
+
+Agents must not create a second competing TODO. When new implementation detail is discovered, update `TODO.md`. When architecture changes, update this plan first and then reconcile the TODO.
+
+Unless the user explicitly requests later work, agents select the earliest unchecked, unblocked TODO item in the active milestone.
+
+Implementation and execution verification are separate states. An item may be implemented but remain `[AWAITING EVIDENCE]`; an execution checkbox is not complete until the exact candidate commit has the required local-agent/CI evidence.
+
+## 49.2 Playability ladder
+
+The TODO defines cumulative gates:
+
+```text
+P0  bootable engine + deterministic public command/replay loop
+P1  minimal interactive available-action loop
+P2  complete human-vs-SimpleNpcController combat slice
+P3  exploration/perception/discovery flowing into encounter
+P4  character creation + gameplay + progression
+P5  complete DM/player campaign session
+P6  creator -> validate/simulate/publish -> playable content
+P7  content revision/migration -> continued play/replay
+P8  release-quality end-to-end platform
+```
+
+A later gate includes the earlier gates unless explicitly superseded. Breaking an earlier gate is a regression, not acceptable milestone progress.
+
+P2 is the first unmistakably game-like vertical slice and must arrive by v0.3. It requires a human-facing client to discover and submit legal actions while `SimpleNpcController` independently drives the opposing non-human actor through the same authoritative command/rules path.
+
+## 49.3 Continuous Testing Grounds journey
+
+Testing Grounds is one cumulative playable story rather than disconnected test fixtures. It grows toward:
+
+```text
+create/install content
+    -> create campaign
+    -> invite/join/ready/session
+    -> create/select hero
+    -> town dialogue/quest/trade
+    -> travel/explore/discover/interact
+    -> autonomous NPC encounter
+    -> reward/progression
+    -> checkpoint
+    -> disconnect / optional AI handoff / reconnect
+    -> session close + recap/journal
+    -> replay identical state
+    -> content revision/diff/dry-run/activate
+    -> continue play across content-lock boundary
+```
+
+Every user-visible subsystem should extend or strengthen this journey when it naturally belongs to it.
+
+## 49.4 Milestone-to-TODO mapping
+
+```text
+v0.1 -> TODO Phase A -> P0/P1
+v0.2 -> TODO Phase B -> timing/action stability
+v0.3 -> TODO Phase C -> P2
+v0.4 -> TODO Phase D -> richer data-driven P2
+v0.5 -> TODO Phase E -> P3
+v0.6 -> TODO Phase F -> P4
+v0.7 -> TODO Phase G -> P5/P6
+v0.8 -> TODO Phase H -> advanced controller variants without losing baseline gates
+v0.9 -> TODO Phases I/J -> stable APIs + P7
+v1.0 -> TODO Phase K + P8 release acceptance
+```
+
+A roadmap milestone cannot be represented as complete while its corresponding TODO phase or required playable gate is incomplete.
+
+## 49.5 Local evidence integration
+
+Each playable gate defines the canonical local profile(s) required to prove it. The local test agent may execute those profiles, while remote agents design/implement the tests and interpret evidence.
+
+Typical progression:
+
+```text
+P0/P1 -> smoke + pr
+P2    -> playtest + replay + simulation
+P3/P4 -> playtest + replay (+ targeted migration as needed)
+P5/P6 -> full + simulation + replay
+P7    -> migration + replay + full
+P8    -> release
+```
+
+These names describe canonical profiles; profile manifests decide the exact suites. Required blocked or unexpectedly skipped tests do not count as passes.
+
+## 49.6 Playable-product definition of done
+
+The project is not successful merely because endpoints exist. By the mature gates a real/reference client must be able to:
+
+1. start/connect to the service;
+2. create or load a campaign;
+3. join a session and control a character;
+4. discover visible state/legal actions from the server;
+5. explore/interact/socialize/trade/craft as supported;
+6. play complete encounters against autonomous NPCs;
+7. receive rewards and progress a character/quest/world state;
+8. survive timeout/disconnect/reconnect flows;
+9. checkpoint and continue without destructive history edits;
+10. inspect logs/recaps/journals;
+11. replay to the same canonical state;
+12. eventually author/publish and safely evolve content through the same platform.
+
+The executable TODO exists to make that outcome difficult to lose sight of during implementation.
