@@ -27,6 +27,14 @@ async def get_encounter(encounter_id: str, request: Request) -> dict[str, object
         raise HTTPException(status_code=404, detail="encounter not found") from exc
 
 
+@router.get("/worlds/{world_id}")
+async def get_world(world_id: str, request: Request, actor_id: str | None = None) -> dict[str, object]:
+    try:
+        return request.app.state.engine.world_projection(world_id, actor_id=actor_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="world not found") from exc
+
+
 @router.get("/actors/{actor_id}/available-actions")
 async def available_actions(actor_id: str, request: Request) -> dict[str, object]:
     try:
