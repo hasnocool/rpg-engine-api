@@ -1,7 +1,19 @@
-import json
 from collections.abc import Iterable
 
-from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, delete, insert, select, update
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    delete,
+    insert,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from rpg_engine_api.domain.commands import CommandReceipt
@@ -27,6 +39,7 @@ domain_events = Table(
     Column("campaign_id", String(128), nullable=False, index=True),
     Column("event_type", String(128), nullable=False, index=True),
     Column("event_json", Text, nullable=False),
+    UniqueConstraint("stream_id", "stream_version", name="uq_domain_events_stream_version"),
 )
 
 command_receipts = Table(
@@ -135,7 +148,8 @@ class PostgresEventStore:
                 )
                 await connection.execute(
                     insert(outbox_events).values(
-                        event_id=event.event_id, payload_json=event.model_dump_json()
+                        event_id=event.event_id,
+                        payload_json=event.model_dump_json(),
                     )
                 )
                 stored.append(event)
