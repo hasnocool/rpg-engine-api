@@ -1,34 +1,23 @@
-# Python
+.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
-coverage.xml
 htmlcov/
-
-# Environments/build
-.venv/
-venv/
+coverage.xml
+*.egg-info/
 dist/
 build/
-*.egg-info/
-
-# Local configuration/secrets
 .env
 .env.*
 !.env.example
-
-# IDE/OS
-.vscode/
-.idea/
-.DS_Store
-
-# Generated test evidence
 artifacts/test-evidence/
-
-# Local databases/logs
-*.db
-*.sqlite*
 *.log
+.DS_Store
+.idea/
+.vscode/
+
+# GitHub Actions are intentionally not used in this repository.
+# `.github/workflows/` should remain absent/empty by policy.
