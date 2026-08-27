@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environments/build
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Local configuration/secrets
+.env
+.env.*
+!.env.example
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+
+# Generated test evidence
+artifacts/test-evidence/
+
+# Local databases/logs
+*.db
+*.sqlite*
+*.log
