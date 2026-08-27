@@ -19,6 +19,19 @@ async def get_actor(actor_id: str, request: Request) -> dict[str, object]:
         raise HTTPException(status_code=404, detail="actor not found") from exc
 
 
+@router.get("/character-creation/schema")
+async def get_character_creation_schema(request: Request) -> dict[str, object]:
+    return {"data": request.app.state.engine.character_creation_schema(), "meta": {"schema_version": "1.0"}}
+
+
+@router.get("/character-creation/{creation_id}")
+async def get_character_creation(creation_id: str, request: Request) -> dict[str, object]:
+    try:
+        return request.app.state.engine.character_creation_projection(creation_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="character creation session not found") from exc
+
+
 @router.get("/encounters/{encounter_id}")
 async def get_encounter(encounter_id: str, request: Request) -> dict[str, object]:
     try:

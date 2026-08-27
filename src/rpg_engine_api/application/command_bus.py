@@ -6,6 +6,13 @@ from typing import Any
 from rpg_engine_api.controllers.simple_npc import SimpleNpcController
 from rpg_engine_api.domain.actor import ActorState, reduce_actor
 from rpg_engine_api.domain.campaign import CampaignState, reduce_campaign
+from rpg_engine_api.domain.character_creation import (
+    REFERENCE_ARCHETYPES,
+    CharacterCreationSession,
+    CharacterCreationStatus,
+    character_creation_schema,
+    reduce_character_creation,
+)
 from rpg_engine_api.domain.commands import CommandEnvelope, CommandError, CommandReceipt, CommandStatus, ErrorCode, PrincipalContext
 from rpg_engine_api.domain.controllers import ControllerAssignment, ControllerType
 from rpg_engine_api.domain.dice import DeterministicRng
@@ -25,6 +32,7 @@ class EngineService:
         self.actors: dict[str, ActorState] = {}
         self.encounters: dict[str, EncounterState] = {}
         self.worlds: dict[str, WorldState] = {}
+        self.character_creations: dict[str, CharacterCreationSession] = {}
         self._rng: dict[str, DeterministicRng] = {}
         self._command_lock = asyncio.Lock()
 
@@ -56,6 +64,11 @@ class EngineService:
             "CreateCampaign": self._create_campaign,
             "CreateActor": self._create_actor,
             "RollDice": self._roll_dice,
+            "StartCharacterCreation": self._start_character_creation,
+            "SelectCharacterName": self._select_character_name,
+            "SelectCharacterArchetype": self._select_character_archetype,
+            "FinalizeCharacterCreation": self._finalize_character_creation,
+            "AdvanceActor": self._advance_actor,
             "CreateWorld": self._create_world,
             "PlaceActorInWorld": self._place_actor_in_world,
             "TravelActor": self._travel_actor,
@@ -119,6 +132,98 @@ class EngineService:
         stored = await self.store.append(stream_id, expected, (event,))
         self.campaigns[campaign_id] = reduce_campaign(self.campaigns[campaign_id], stored[0])
         return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=(stored[0].event_id,), stream_versions={stream_id: stored[0].stream_version}, result={"dice": stored[0].payload})
+
+    async def _start_character_creation(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
+        campaign_id = command.campaign_id or str(command.payload.get("campaign_id", ""))
+        if campaign_id not in self.campaigns:
+            raise KeyError("campaign does not exist")
+        creation_id = str(command.payload.get("creation_id") or new_id("charcreate"))
+        if creation_id in self.character_creations:
+            raise ValueError("character creation session already exists")
+        stream_id = f"character_creation:{creation_id}"
+        event = DomainEvent(event_type="CharacterCreationStarted", campaign_id=campaign_id, stream_id=stream_id, command_id=command.command_id, correlation_id=command.command_id, payload={"creation_id": creation_id, "principal_id": principal.principal_id})
+        stored = await self.store.append(stream_id, 0, (event,))
+        self.character_creations[creation_id] = reduce_character_creation(None, stored[0])
+        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=(stored[0].event_id,), stream_versions={stream_id: stored[0].stream_version}, result={"campaign_id": campaign_id, "creation_id": creation_id})
+
+    async def _select_character_name(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
+        creation_id = str(command.payload.get("creation_id", ""))
+        session = self._owned_creation(creation_id, principal)
+        name = str(command.payload.get("name", "")).strip()
+        if not name or len(name) > 80:
+            raise ValueError("character name must be 1-80 characters")
+        return await self._append_creation_event(command, session, "CharacterNameSelected", {"name": name})
+
+    async def _select_character_archetype(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
+        creation_id = str(command.payload.get("creation_id", ""))
+        session = self._owned_creation(creation_id, principal)
+        archetype = str(command.payload.get("archetype", ""))
+        if archetype not in REFERENCE_ARCHETYPES:
+            raise ValueError("unknown archetype")
+        return await self._append_creation_event(command, session, "CharacterArchetypeSelected", {"archetype": archetype})
+
+    def _owned_creation(self, creation_id: str, principal: PrincipalContext) -> CharacterCreationSession:
+        session = self.character_creations.get(creation_id)
+        if session is None:
+            raise KeyError("character creation session does not exist")
+        if session.principal_id != principal.principal_id:
+            raise ValueError("character creation session belongs to another principal")
+        if session.status != CharacterCreationStatus.DRAFT:
+            raise ValueError("character creation session is not editable")
+        return session
+
+    async def _append_creation_event(self, command: CommandEnvelope, session: CharacterCreationSession, event_type: str, payload: dict[str, object]) -> CommandReceipt:
+        stream_id = f"character_creation:{session.creation_id}"
+        expected = await self.store.current_version(stream_id)
+        event = DomainEvent(event_type=event_type, campaign_id=session.campaign_id, stream_id=stream_id, command_id=command.command_id, correlation_id=command.command_id, payload=payload)
+        stored = await self.store.append(stream_id, expected, (event,))
+        self.character_creations[session.creation_id] = reduce_character_creation(session, stored[0])
+        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=(stored[0].event_id,), stream_versions={stream_id: stored[0].stream_version}, result={"campaign_id": session.campaign_id, "creation_id": session.creation_id})
+
+    async def _finalize_character_creation(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
+        creation_id = str(command.payload.get("creation_id", ""))
+        session = self._owned_creation(creation_id, principal)
+        if not session.valid_for_finalize:
+            raise ValueError("character creation requires name and archetype")
+        assert session.archetype is not None and session.name is not None
+        stats = REFERENCE_ARCHETYPES[session.archetype]
+        actor_id = str(command.payload.get("actor_id") or new_id("act"))
+        actor_receipt = await self._create_actor(
+            CommandEnvelope(command_id=new_id("cmd"), command_type="CreateActor", campaign_id=session.campaign_id, payload={"actor_id": actor_id, "name": session.name, "max_hp": stats["max_hp"], "attack_bonus": stats["attack_bonus"], "defense": stats["defense"], "controller": {"controller_type": "human", "controller_version": "1"}}),
+            principal,
+        )
+        if actor_receipt.status != CommandStatus.ACCEPTED:
+            raise ValueError("failed to create finalized actor")
+        creation_stream = f"character_creation:{creation_id}"
+        expected = await self.store.current_version(creation_stream)
+        finalized = DomainEvent(event_type="CharacterCreationFinalized", campaign_id=session.campaign_id, stream_id=creation_stream, actor_id=actor_id, command_id=command.command_id, correlation_id=command.command_id, payload={"actor_id": actor_id, "archetype": session.archetype})
+        stored = await self.store.append(creation_stream, expected, (finalized,))
+        self.character_creations[creation_id] = reduce_character_creation(session, stored[0])
+        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=actor_receipt.emitted_event_ids + (stored[0].event_id,), stream_versions={**actor_receipt.stream_versions, creation_stream: stored[0].stream_version}, result={"campaign_id": session.campaign_id, "creation_id": creation_id, "actor_id": actor_id, "archetype": session.archetype})
+
+    async def _advance_actor(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
+        del principal
+        actor_id = command.actor_id or str(command.payload.get("actor_id", ""))
+        actor = self.actors.get(actor_id)
+        if actor is None:
+            raise KeyError("actor does not exist")
+        if actor.progression_points < 1:
+            raise ValueError("actor has no progression points")
+        choice = str(command.payload.get("choice", ""))
+        effects = {
+            "precision": {"feature": "precision_training", "attack_bonus_delta": 1},
+            "toughness": {"feature": "toughness_training", "max_hp_delta": 4},
+            "defense": {"feature": "defensive_training", "defense_delta": 1},
+        }
+        if choice not in effects:
+            raise ValueError("unknown progression choice")
+        stream_id = f"actor:{actor_id}"
+        expected = await self.store.current_version(stream_id)
+        payload = {**effects[choice], "progression_points": actor.progression_points - 1, "choice": choice}
+        event = DomainEvent(event_type="ProgressionChoiceApplied", campaign_id=actor.campaign_id, stream_id=stream_id, actor_id=actor_id, command_id=command.command_id, correlation_id=command.command_id, payload=payload)
+        stored = await self.store.append(stream_id, expected, (event,))
+        self.actors[actor_id] = reduce_actor(actor, stored[0])
+        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=(stored[0].event_id,), stream_versions={stream_id: stored[0].stream_version}, result={"campaign_id": actor.campaign_id, "actor_id": actor_id, "choice": choice})
 
     async def _create_world(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
         del principal
@@ -203,14 +308,13 @@ class EngineService:
         current = world.locations[current_id]
         discovered_locations = set(world.discovered_locations.get(actor_id, []))
         discovered_objects = set(world.discovered_objects.get(actor_id, []))
-        events: list[DomainEvent] = []
         base = {"campaign_id": world.campaign_id, "stream_id": f"world:{world_id}", "actor_id": actor_id, "command_id": command.command_id, "correlation_id": command.command_id}
         hidden_locations = sorted(location_id for location_id in current.connections if world.locations[location_id].hidden and location_id not in discovered_locations)
         hidden_objects = sorted(obj.id for obj in current.objects if obj.hidden and obj.id not in discovered_objects)
         if hidden_locations:
-            events.append(DomainEvent(event_type="LocationDiscovered", payload={"location_id": hidden_locations[0]}, **base))
+            events = [DomainEvent(event_type="LocationDiscovered", payload={"location_id": hidden_locations[0]}, **base)]
         elif hidden_objects:
-            events.append(DomainEvent(event_type="WorldObjectDiscovered", payload={"object_id": hidden_objects[0]}, **base))
+            events = [DomainEvent(event_type="WorldObjectDiscovered", payload={"object_id": hidden_objects[0]}, **base)]
         else:
             raise ValueError("nothing new can be discovered here")
         expected = await self.store.current_version(f"world:{world_id}")
@@ -302,7 +406,27 @@ class EngineService:
         for event in stored:
             state = reduce_encounter(state, event)
         self.encounters[encounter_id] = state
-        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=tuple(event.event_id for event in stored), stream_versions={stream_id: stored[-1].stream_version}, result={"campaign_id": encounter.campaign_id, "encounter_id": encounter_id, "action_id": action_id})
+        reward_ids: tuple[str, ...] = ()
+        reward_versions: dict[str, int] = {}
+        if encounter.status == EncounterStatus.ACTIVE and state.status == EncounterStatus.COMPLETED:
+            reward_ids, reward_versions = await self._grant_encounter_rewards(state, command.command_id)
+        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=tuple(event.event_id for event in stored) + reward_ids, stream_versions={stream_id: stored[-1].stream_version, **reward_versions}, result={"campaign_id": encounter.campaign_id, "encounter_id": encounter_id, "action_id": action_id, "rewards_granted": len(reward_ids)})
+
+    async def _grant_encounter_rewards(self, encounter: EncounterState, command_id: str) -> tuple[tuple[str, ...], dict[str, int]]:
+        event_ids: list[str] = []
+        versions: dict[str, int] = {}
+        for participant in sorted(encounter.participants.values(), key=lambda item: item.actor_id):
+            if not participant.alive or participant.side != encounter.winner_side:
+                continue
+            actor = self.actors[participant.actor_id]
+            stream_id = f"actor:{actor.actor_id}"
+            expected = await self.store.current_version(stream_id)
+            event = DomainEvent(event_type="ExperienceGranted", campaign_id=actor.campaign_id, stream_id=stream_id, actor_id=actor.actor_id, command_id=command_id, correlation_id=command_id, payload={"experience": 100, "progression_points": 1, "new_level": max(actor.level, 2), "source": f"encounter:{encounter.encounter_id}"})
+            stored = await self.store.append(stream_id, expected, (event,))
+            self.actors[actor.actor_id] = reduce_actor(actor, stored[0])
+            event_ids.append(stored[0].event_id)
+            versions[stream_id] = stored[0].stream_version
+        return tuple(event_ids), versions
 
     def _resolve_action_events(self, encounter: EncounterState, actor_id: str, action_id: str, target_id: object, command: CommandEnvelope) -> tuple[DomainEvent, ...]:
         stream_id = f"encounter:{encounter.encounter_id}"
@@ -384,6 +508,15 @@ class EngineService:
         state = self.encounters[encounter_id]
         return {"data": state.model_dump(mode="json"), "meta": {"projection_schema_version": "1.0", "projection_sequence": state.stream_version}}
 
+    def character_creation_projection(self, creation_id: str) -> dict[str, Any]:
+        state = self.character_creations[creation_id]
+        data = state.model_dump(mode="json")
+        data["valid_for_finalize"] = state.valid_for_finalize
+        return {"data": data, "meta": {"projection_schema_version": "1.0", "projection_sequence": state.stream_version}}
+
+    def character_creation_schema(self) -> dict[str, Any]:
+        return character_creation_schema()
+
     def world_projection(self, world_id: str, actor_id: str | None = None) -> dict[str, Any]:
         world = self.worlds[world_id]
         if actor_id is None:
@@ -393,22 +526,8 @@ class EngineService:
             current = world.actor_locations.get(actor_id)
             if current:
                 discovered.add(current)
-            locations = {
-                location_id: location.model_dump(mode="json")
-                for location_id, location in world.locations.items()
-                if location_id in discovered
-            }
-            data = {
-                "schema_version": world.schema_version,
-                "world_id": world.world_id,
-                "campaign_id": world.campaign_id,
-                "current_location_id": current,
-                "locations": locations,
-                "discovered_locations": sorted(discovered),
-                "discovered_objects": world.discovered_objects.get(actor_id, []),
-                "interactions": [item for item in world.interactions if item["actor_id"] == actor_id],
-                "stream_version": world.stream_version,
-            }
+            locations = {location_id: location.model_dump(mode="json") for location_id, location in world.locations.items() if location_id in discovered}
+            data = {"schema_version": world.schema_version, "world_id": world.world_id, "campaign_id": world.campaign_id, "current_location_id": current, "locations": locations, "discovered_locations": sorted(discovered), "discovered_objects": world.discovered_objects.get(actor_id, []), "interactions": [item for item in world.interactions if item["actor_id"] == actor_id], "stream_version": world.stream_version}
         return {"data": data, "meta": {"projection_schema_version": "1.0", "projection_sequence": world.stream_version}}
 
     def available_actions(self, actor_id: str) -> list[dict[str, Any]]:
@@ -434,8 +553,11 @@ class EngineService:
             actions.append({**base, "action_id": "guard", "label": "Guard"})
             return actions
 
-        world = next((value for value in self.worlds.values() if actor_id in value.actor_locations), None)
         actions = [{"action_id": "roll_check", "label": "Roll a check", "command_type": "RollDice", "campaign_id": actor.campaign_id, "actor_id": actor.actor_id, "payload_schema": {"expression": "1d20", "purpose": "generic_check"}}]
+        if actor.progression_points > 0:
+            for choice, label in (("precision", "Train precision"), ("toughness", "Train toughness"), ("defense", "Train defense")):
+                actions.append({"action_id": f"advance_{choice}", "label": label, "command_type": "AdvanceActor", "campaign_id": actor.campaign_id, "actor_id": actor_id, "choice": choice})
+        world = next((value for value in self.worlds.values() if actor_id in value.actor_locations), None)
         if world is None:
             return actions
         current_id = world.actor_locations[actor_id]
@@ -457,9 +579,10 @@ class EngineService:
     def live_snapshot(self, campaign_id: str) -> dict[str, Any]:
         campaign = self.campaigns[campaign_id]
         actors = {actor_id: self.actors[actor_id].model_dump(mode="json") for actor_id in sorted(campaign.actor_ids) if actor_id in self.actors}
+        creations = {creation_id: creation.model_dump(mode="json") for creation_id, creation in sorted(self.character_creations.items()) if creation.campaign_id == campaign_id}
         encounters = {encounter_id: encounter.model_dump(mode="json") for encounter_id, encounter in sorted(self.encounters.items()) if encounter.campaign_id == campaign_id}
         worlds = {world_id: world.model_dump(mode="json") for world_id, world in sorted(self.worlds.items()) if world.campaign_id == campaign_id}
-        return {"campaign": campaign.model_dump(mode="json"), "actors": actors, "worlds": worlds, "encounters": encounters}
+        return {"campaign": campaign.model_dump(mode="json"), "actors": actors, "character_creations": creations, "worlds": worlds, "encounters": encounters}
 
     async def canonical_hash(self, campaign_id: str) -> str:
         snapshot = await self.replay_snapshot(campaign_id)
@@ -471,6 +594,7 @@ class EngineService:
     async def replay_snapshot(self, campaign_id: str) -> dict[str, Any]:
         campaign: CampaignState | None = None
         actors: dict[str, ActorState] = {}
+        creations: dict[str, CharacterCreationSession] = {}
         encounters: dict[str, EncounterState] = {}
         worlds: dict[str, WorldState] = {}
         for event in await self.store.read_all():
@@ -481,6 +605,9 @@ class EngineService:
             elif event.stream_id.startswith("actor:"):
                 actor_id = event.stream_id.split(":", 1)[1]
                 actors[actor_id] = reduce_actor(actors.get(actor_id), event)
+            elif event.stream_id.startswith("character_creation:"):
+                creation_id = event.stream_id.split(":", 1)[1]
+                creations[creation_id] = reduce_character_creation(creations.get(creation_id), event)
             elif event.stream_id.startswith("encounter:"):
                 encounter_id = event.stream_id.split(":", 1)[1]
                 encounters[encounter_id] = reduce_encounter(encounters.get(encounter_id), event)
@@ -489,4 +616,4 @@ class EngineService:
                 worlds[world_id] = reduce_world(worlds.get(world_id), event)
         if campaign is None:
             raise KeyError(campaign_id)
-        return {"campaign": campaign.model_dump(mode="json"), "actors": {key: value.model_dump(mode="json") for key, value in sorted(actors.items())}, "worlds": {key: value.model_dump(mode="json") for key, value in sorted(worlds.items())}, "encounters": {key: value.model_dump(mode="json") for key, value in sorted(encounters.items())}}
+        return {"campaign": campaign.model_dump(mode="json"), "actors": {key: value.model_dump(mode="json") for key, value in sorted(actors.items())}, "character_creations": {key: value.model_dump(mode="json") for key, value in sorted(creations.items())}, "worlds": {key: value.model_dump(mode="json") for key, value in sorted(worlds.items())}, "encounters": {key: value.model_dump(mode="json") for key, value in sorted(encounters.items())}}
