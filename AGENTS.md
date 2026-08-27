@@ -6,6 +6,7 @@ Detailed normative specifications referenced by the plan:
 
 - `docs/testing/HUMAN_PLAYTESTING.md` — public-interface human-play testing.
 - `docs/testing/SIMULATION_QUALITY_LAB.md` — simulation, balance evidence, reachability analysis, and Content Testing SDK.
+- `docs/testing/LOCAL_TEST_AGENT.md` — local test execution authority, canonical profiles, evidence bundles, and merge/release gates.
 - `docs/ai/SIMPLE_NPC_AI.md` — deterministic baseline NPC controller.
 - `docs/authoring/CONTENT_AUTHORING.md` — creator workspaces, validation, publishing, Creator/DM Studio APIs, encounter authoring, NPC personality, and narration templates.
 - `docs/operations/DM_SESSION_OPERATIONS.md` — lobbies, invitations, sessions, control handoff, checkpoints/branches, recaps, and journals.
@@ -22,13 +23,14 @@ Before changing code or documentation:
 3. Identify the earliest incomplete roadmap milestone relevant to the requested work unless the user explicitly directs otherwise.
 4. Read every detailed specification relevant to the changed subsystem:
    - gameplay/public-client behavior -> `HUMAN_PLAYTESTING.md`;
+   - test execution/evidence/merge gates -> `LOCAL_TEST_AGENT.md`;
    - NPC/controller behavior -> `SIMPLE_NPC_AI.md`;
    - authored content/creator APIs/encounters/personality/narration -> `CONTENT_AUTHORING.md`;
    - lobby/session/DM/checkpoint/recap/journal -> `DM_SESSION_OPERATIONS.md`;
    - simulation/content testing/reachability/balance evidence -> `SIMULATION_QUALITY_LAB.md`;
    - plugins/extensions/content upgrades/migrations -> `TRUSTED_EXTENSIONS_AND_MIGRATIONS.md`.
 5. Identify which contracts the change touches: domain state, definitions, commands, events, projections, timing, persistence, visibility, controllers, authoring, operations, testing, extensions, or migration.
-6. Identify how the behavior will be proven: unit/integration tests, public human-play scenario, simulation/reachability check, or migration fixture.
+6. Identify how the behavior will be proven: unit/integration tests, public human-play scenario, simulation/reachability check, migration fixture, and which canonical local test profile must execute it.
 7. Do not invent a competing architecture when a canonical specification already defines the boundary.
 8. If a genuinely new non-trivial architectural decision is required, update `PLAN.md` and add an ADR under `docs/decisions/`.
 
@@ -39,7 +41,7 @@ Until v0.1 is complete, work from **v0.1 — Deterministic Core + Shared Contrac
 Recommended sequence:
 
 ```text
-PR 1  Project scaffold + architecture boundaries + playtest harness skeleton
+PR 1  Project scaffold + architecture boundaries + playtest/test-evidence skeleton
 PR 2  Stable IDs + shared primitives + ControllerAssignment + definition/extension seams
 PR 3  Commands + events + command receipts + errors
 PR 4  Deterministic RNG streams + dice + seed-bundle support
@@ -50,10 +52,81 @@ PR 8  Command bus + idempotency + optimistic concurrency
 PR 9  Ruleset/content manifests + DefinitionRef/content-lock primitives
 PR 10 Initial REST/query contracts + black-box async playtest client
 PR 11 Initial WebSocket/resume protocol + live playtest client
-PR 12 Testing Grounds fixture + v0.1 human-play/determinism integration suite
+PR 12 Testing Grounds fixture + v0.1 human-play/determinism integration suite + local `pr` evidence
 ```
 
 Do not skip foundational work because a later feature is more visible.
+
+## Test execution authority and evidence
+
+Follow `docs/testing/LOCAL_TEST_AGENT.md`.
+
+The local test agent or CI is the authority for claims that code **actually executed and passed** in the configured environment. Remote coding/review agents remain responsible for designing tests, implementing them, selecting the required canonical profile, and interpreting returned evidence.
+
+Use this distinction:
+
+```text
+implemented
+    code/tests/scenarios are written and reviewed
+
+execution_verified
+    matching local-agent/CI TestEvidenceBundle exists
+    evidence commit_sha matches the candidate revision
+    required canonical profile completed successfully
+
+mergeable
+    implementation-ready
+    + execution-verified
+    + review/policy gates
+```
+
+Never claim `verified locally`, `all tests pass`, database/client integration success, or release readiness from code inspection alone.
+
+When execution evidence is absent, say **not executed** or **execution evidence unavailable**, and identify the exact local profile that should run.
+
+### Canonical local test profiles
+
+The repository should converge on one entry point with profiles such as:
+
+```text
+smoke
+pr
+unit
+integration
+playtest
+simulation
+migration
+replay
+performance
+full
+nightly
+release
+```
+
+Do not substitute a shorter hand-picked command while claiming a canonical profile passed.
+
+For behavior-changing PRs, default to `pr` evidence. Add `migration`/`replay`, `performance`, or other targeted profiles when the changed contract requires them. Release claims require `release` evidence.
+
+### Evidence requirements
+
+`TestEvidenceBundle` should bind results to at least:
+
+```text
+repository + commit_sha
+branch/dirty-worktree state
+test profile
+executor/environment metadata
+suite commands/status/counts/durations
+playtest/simulation/migration/replay artifacts
+failure references
+coverage/performance artifacts where relevant
+```
+
+Blocked or unavailable suites do not count as passed. Unexpected required skips must remain visible.
+
+If a fix changes code after a green run, previous evidence is stale for the new commit and the required profile must run again.
+
+Never fabricate commands, counts, logs, screenshots, green status, or environment behavior.
 
 ## Cross-cutting architecture invariants
 
@@ -61,7 +134,7 @@ Do not skip foundational work because a later feature is more visible.
 
 - Gameplay state changes through typed commands and authoritative events.
 - Clients, AI controllers, creator tools, and test harnesses must not patch authoritative gameplay state directly.
-- Projections, logs, AI traces, recaps, and simulation reports are derived/non-authoritative.
+- Projections, logs, AI traces, recaps, simulation reports, and test evidence are derived/non-authoritative.
 
 ### Determinism and replay
 
@@ -129,6 +202,7 @@ What invalid path must be rejected?
 What happens on timeout/retry/reconnect?
 How is replay verified?
 If NPCs participate, which controller/profile drives them?
+Which local test profile proves the end-to-end behavior on the candidate commit?
 ```
 
 Use controllable clocks instead of long sleeps. Failures should capture deterministic scenario/version/seed/content/controller metadata.
@@ -226,7 +300,7 @@ Keep responsibilities distinct:
 ```text
 api/             transport/auth/schema adaptation
 application/     orchestration/transactions
- domain/          deterministic game state/invariants
+domain/          deterministic game state/invariants
 rules/           rules evaluation/runtime
 rulesets/        licensed/custom mechanics/content integration
 controllers/     replaceable actor decisions; no rules authority
@@ -235,6 +309,7 @@ persistence/     events/snapshots/projections/outbox
 infrastructure/  external/process concerns
 simulation/      isolated quality/simulation workers using real runtime
 tests/playtest/  black-box public-interface personas/scenarios
+test execution   local-agent/CI profile runner + evidence artifacts
 ```
 
 Published content and trusted extension packages may live under other concrete directories, but the conceptual boundaries above must remain.
@@ -252,6 +327,7 @@ validation ready
 conformance tests
 human-play scenarios
 simulation/static-analysis checks where relevant
+local execution evidence for required profile
 ```
 
 Only redistribute appropriately licensed material and preserve attribution/source metadata.
@@ -275,27 +351,34 @@ Authored encounters should use real `EncounterTemplate`s. From v0.3 onward, cano
 Before declaring work complete:
 
 1. Re-read the active milestone and relevant normative specs.
-2. Run relevant unit/integration/determinism/replay tests.
-3. Add/run black-box human-play scenarios for user-visible gameplay.
-4. Add/run controller tests when NPC autonomy is involved.
-5. Add/run authoring validation/publish tests for new content schemas.
-6. Add/run simulation/reachability/content-quality checks when the feature affects authored graphs/encounters/content usability.
-7. Verify no blocking operations, polling loops, or real sleeps were introduced into async/timing paths.
-8. Verify state changes still pass through proper commands/events.
-9. Verify visibility boundaries for clients/controllers/recaps.
-10. Verify public/content/controller/extension schemas are versioned.
-11. Verify source/license provenance for distributable content.
-12. Verify retry/timeout/reconnect/controller fallback behavior where relevant.
-13. Verify migration/upcast/content-lock/extension compatibility when persistent interpretation changes.
-14. Update test/feature coverage manifests.
-15. Update `PLAN.md` only when architecture/roadmap decisions changed or milestone checkboxes are objectively satisfied.
-16. Do not claim completion when the relevant public play path, authoring path, or migration/test evidence is missing.
+2. Add the relevant unit/integration/determinism/replay tests.
+3. Add black-box human-play scenarios for user-visible gameplay.
+4. Add controller tests when NPC autonomy is involved.
+5. Add authoring validation/publish tests for new content schemas.
+6. Add simulation/reachability/content-quality checks when the feature affects authored graphs/encounters/content usability.
+7. Identify the required canonical local test profile(s) from `LOCAL_TEST_AGENT.md`.
+8. Verify no blocking operations, polling loops, or real sleeps were introduced into async/timing paths.
+9. Verify state changes still pass through proper commands/events.
+10. Verify visibility boundaries for clients/controllers/recaps.
+11. Verify public/content/controller/extension/evidence schemas are versioned.
+12. Verify source/license provenance for distributable content.
+13. Verify retry/timeout/reconnect/controller fallback behavior where relevant.
+14. Verify migration/upcast/content-lock/extension compatibility when persistent interpretation changes.
+15. Update test/feature coverage manifests.
+16. If local/CI evidence is available, verify its `commit_sha`, profile, required suites, skips/blocks, and artifacts before reporting execution success.
+17. If evidence is unavailable, report the work as implemented/not-executed rather than passing.
+18. Update `PLAN.md` only when architecture/roadmap decisions changed or milestone checkboxes are objectively satisfied.
+19. Do not claim milestone/PR execution completion when the required commit-bound evidence is missing.
 
 ## Preventing project drift
 
 Do not:
 
 - create competing roadmaps or replacement subsystem architectures;
+- create a competing test-execution/evidence protocol instead of following `LOCAL_TEST_AGENT.md`;
+- claim execution results that were not produced by an available local/CI executor;
+- reuse stale green evidence after code changes without retesting the new commit;
+- treat blocked/skipped required suites as passed;
 - require an LLM for baseline NPC play;
 - give AI omniscient state;
 - implement hidden client/controller rules;
