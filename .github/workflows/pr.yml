@@ -1,0 +1,71 @@
+name: PR validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pr-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e '.[dev]'
+      - name: Run canonical PR profile
+        run: ./scripts/test pr
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-test-evidence
+          path: artifacts/test-evidence/
+          if-no-files-found: warn
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rpg
+          POSTGRES_PASSWORD: rpg
+          POSTGRES_DB: rpg_engine
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rpg -d rpg_engine"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
+    env:
+      RPG_ENGINE_DATABASE_URL: postgresql+asyncpg://rpg:rpg@127.0.0.1:5432/rpg_engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e '.[dev]'
+      - name: Apply migrations
+        run: alembic upgrade head
+      - name: Run integration profile
+        run: ./scripts/test integration
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-test-evidence
+          path: artifacts/test-evidence/
+          if-no-files-found: warn
