@@ -2,611 +2,313 @@
 
 `PLAN.md` is the single authoritative architecture and implementation roadmap for this repository.
 
-`docs/testing/HUMAN_PLAYTESTING.md` is the normative testing specification for proving that the systems in `PLAN.md` are actually playable end to end through public interfaces.
+Detailed normative specifications referenced by the plan:
 
-`docs/ai/SIMPLE_NPC_AI.md` is the normative specification for the first non-human actor controller. Until the advanced-AI milestone, the default autonomous NPC/creature controller is the deterministic `SimpleNpcController`, not an LLM or external model.
+- `docs/testing/HUMAN_PLAYTESTING.md` — public-interface human-play testing.
+- `docs/testing/SIMULATION_QUALITY_LAB.md` — simulation, balance evidence, reachability analysis, and Content Testing SDK.
+- `docs/ai/SIMPLE_NPC_AI.md` — deterministic baseline NPC controller.
+- `docs/authoring/CONTENT_AUTHORING.md` — creator workspaces, validation, publishing, Creator/DM Studio APIs, encounter authoring, NPC personality, and narration templates.
+- `docs/operations/DM_SESSION_OPERATIONS.md` — lobbies, invitations, sessions, control handoff, checkpoints/branches, recaps, and journals.
+- `docs/extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md` — data-only content boundary, trusted executable extensions, compatibility, dry-run migration, activation, rollback/branching.
 
-These instructions apply to Codex, OpenCode, Claude/Claude Code, Gemini, Pi/Oh My Pi, Prime, GitHub Copilot, and any other coding agent working in this repository. Tool-specific instruction files must defer to this file, `PLAN.md`, the human-play testing specification, and the simple NPC AI specification rather than creating competing roadmaps, testing architectures, or controller designs.
+These instructions apply to Codex, OpenCode, Claude/Claude Code, Gemini, Pi/Oh My Pi, Prime, GitHub Copilot, and any other coding agent working in this repository. Tool-specific instruction files must defer to these canonical documents rather than creating competing roadmaps or subsystem designs.
 
 ## Mandatory startup sequence
 
 Before changing code or documentation:
 
-1. Read `PLAN.md` completely enough to understand the architecture, non-negotiable rules, active milestone, and definition of done.
-2. Read `docs/testing/HUMAN_PLAYTESTING.md` whenever the task changes a user-visible gameplay capability, public API/live protocol, persistence/replay behavior, timing behavior, visibility, or client workflow.
-3. Read `docs/ai/SIMPLE_NPC_AI.md` whenever the task changes NPCs/creatures, controllers, encounters, reactions, perception, movement, schedules, autonomous playtesting, or AI behavior.
-4. Inspect the current repository state and tests.
-5. Identify the **earliest incomplete roadmap milestone** relevant to the requested work unless the user explicitly directs work on a later milestone.
-6. Read that milestone's goal, deliverables, exit criteria, and any earlier architectural sections it depends on.
-7. Identify which contracts the change touches: domain state, commands, events, projections, persistence, rules/content, timing, visibility, API, live protocol, controllers, or human-play scenarios.
-8. Identify the player/DM/client journey that reaches the changed behavior and the scenario that should prove it programmatically.
-9. Do not invent a competing architecture when `PLAN.md` already defines the boundary.
-10. If a genuinely new architectural decision is required, update `PLAN.md` and add an ADR under `docs/decisions/` when the decision is non-trivial or difficult to reverse.
+1. Read `PLAN.md` enough to understand the architecture, non-negotiable rules, active milestone, and definition of done.
+2. Inspect the current repository state and tests.
+3. Identify the earliest incomplete roadmap milestone relevant to the requested work unless the user explicitly directs otherwise.
+4. Read every detailed specification relevant to the changed subsystem:
+   - gameplay/public-client behavior -> `HUMAN_PLAYTESTING.md`;
+   - NPC/controller behavior -> `SIMPLE_NPC_AI.md`;
+   - authored content/creator APIs/encounters/personality/narration -> `CONTENT_AUTHORING.md`;
+   - lobby/session/DM/checkpoint/recap/journal -> `DM_SESSION_OPERATIONS.md`;
+   - simulation/content testing/reachability/balance evidence -> `SIMULATION_QUALITY_LAB.md`;
+   - plugins/extensions/content upgrades/migrations -> `TRUSTED_EXTENSIONS_AND_MIGRATIONS.md`.
+5. Identify which contracts the change touches: domain state, definitions, commands, events, projections, timing, persistence, visibility, controllers, authoring, operations, testing, extensions, or migration.
+6. Identify how the behavior will be proven: unit/integration tests, public human-play scenario, simulation/reachability check, or migration fixture.
+7. Do not invent a competing architecture when a canonical specification already defines the boundary.
+8. If a genuinely new non-trivial architectural decision is required, update `PLAN.md` and add an ADR under `docs/decisions/`.
 
 ## Current implementation priority
 
-Until v0.1 is complete, work from **`v0.1 — Deterministic Core + Shared Contracts`** in `PLAN.md`.
+Until v0.1 is complete, work from **v0.1 — Deterministic Core + Shared Contracts**.
 
-Recommended implementation sequence:
+Recommended sequence:
 
 ```text
 PR 1  Project scaffold + architecture boundaries + playtest harness skeleton
-PR 2  Stable IDs + shared domain primitives + ControllerAssignment seam
-PR 3  Commands + events + command receipts + error taxonomy
+PR 2  Stable IDs + shared primitives + ControllerAssignment + definition/extension seams
+PR 3  Commands + events + command receipts + errors
 PR 4  Deterministic RNG streams + dice + seed-bundle support
 PR 5  In-memory event store + replay + canonical state hashing
-PR 6  PostgreSQL async event store + migrations + transactional outbox seam
+PR 6  PostgreSQL async event store + migrations + outbox seam
 PR 7  Snapshots + projection versions + rebuild seam
 PR 8  Command bus + idempotency + optimistic concurrency
 PR 9  Ruleset/content manifests + DefinitionRef/content-lock primitives
-PR 10 Initial REST command/query contracts + black-box async playtest client
-PR 11 Initial WebSocket event/resume protocol + live playtest client
+PR 10 Initial REST/query contracts + black-box async playtest client
+PR 11 Initial WebSocket/resume protocol + live playtest client
 PR 12 Testing Grounds fixture + v0.1 human-play/determinism integration suite
 ```
 
-Do not skip foundational PRs merely because a later gameplay feature is more visible. Later milestones depend on v0.1's stable contracts.
+Do not skip foundational work because a later feature is more visible.
 
-## Simple NPC AI baseline
+## Cross-cutting architecture invariants
 
-Until advanced controller work in v0.8, use the deterministic controller defined in `docs/ai/SIMPLE_NPC_AI.md`.
+### Server authority
 
-### Required invariants
+- Gameplay state changes through typed commands and authoritative events.
+- Clients, AI controllers, creator tools, and test harnesses must not patch authoritative gameplay state directly.
+- Projections, logs, AI traces, recaps, and simulation reports are derived/non-authoritative.
 
-- The baseline controller is `SimpleNpcController`; do not require an LLM or external AI service for ordinary NPCs/creatures.
-- AI is a **controller**, never a rules authority.
-- It receives only controller-safe, visibility-filtered state available to the actor it controls.
-- It chooses only from server-advertised legal actions/targets or submits movement intents through the normal authoritative movement path.
-- Every selected action enters the same typed command, timing, authorization, rules-validation, event-persistence, and replay path used by human-controlled actors.
-- It does not patch state, call hidden rule mutations, or receive omniscient DM state.
-- The MVP makes one decision at a time and does not perform multi-turn tactical search.
-- Behavior is versioned data (`NpcBehaviorProfile`), not one-off creature-specific Python logic.
-- Initial profiles should remain small: aggressive melee, ranged, balanced/defensive, support, passive, and flee.
-- Initial tie-breaking is deterministic and stable. If variation is later added, it uses a dedicated controller RNG stream and never consumes combat/dice/loot/world RNG or playtest-human behavior RNG.
-- NPC decision evaluation is event-driven when the actor becomes eligible; no busy polling and no blocking sleeps.
-- Controller failures fail safely and cannot corrupt campaign state or crash the scheduler.
-- Structured decision traces are diagnostic/audit information, not authoritative game state.
+### Determinism and replay
 
-### Milestone placement
+- Version every schema/content/controller/extension behavior that can affect replay.
+- Use independent deterministic RNG streams; do not let test behavior, NPC decision variation, weather, loot, or unrelated systems perturb combat dice.
+- Preserve idempotency and optimistic concurrency.
+- Replay must not require re-calling mutable external services.
 
-```text
-v0.1  ControllerAssignment primitive/interface seam
-v0.2  controller eligibility/event hooks
-v0.3  SimpleNpcController combat MVP + reaction policy + human-vs-NPC tests
-v0.5  perception/movement integration + visible-target-only behavior
-v0.7  schedule-step/follow/hold/move-to-location integration
-v0.8  richer utility AI/goals/memory + optional external/LLM adapters
-```
+### Visibility
 
-Do not delay basic autonomous NPC combat until v0.8 if that would force end-to-end playtests to manually puppet every enemy.
+- Apply visibility before serialization and before building NPC/controller decision views.
+- Server-side AI is not omniscient merely because it executes on the server.
+- Creator/admin diagnostics may be privileged but must not leak into player projections.
 
-### AI test requirements
+### Async/non-blocking
 
-When the simple controller is implemented, add tests proving:
+- Target Python 3.12+ with modern typing.
+- Use async-safe FastAPI/SQLAlchemy/PostgreSQL patterns.
+- Never use blocking network/DB/file work or `time.sleep()` on async request/controller/timing paths.
+- Keep controller decisions bounded/event-driven; no busy polling.
+- Isolate CPU-heavy replay, pathfinding, simulations, validation batches, and imports/exports through bounded worker execution when necessary.
 
-- same controller/profile/version + same visible state -> same selected command;
-- hidden/unperceived actors cannot influence the decision;
-- aggressive melee approaches/attacks legally;
-- ranged behavior prefers/maintains legal range where possible;
-- retreat threshold drives flee behavior;
-- support behavior helps only eligible visible allies;
-- passive behavior does not initiate hostility;
-- reactions use only actions advertised for the reaction window;
-- controller-selected commands can still be rejected by normal rules without corruption;
-- human-vs-NPC encounters can run without the playtest harness scripting every NPC command;
-- AI-vs-AI smoke encounters are deterministic;
-- replay reaches the same canonical game state.
+## Baseline NPC AI
 
-## Human-play testing is part of implementation, not cleanup
+Until v0.8 advanced-controller work, use `SimpleNpcController` from `docs/ai/SIMPLE_NPC_AI.md`.
 
-Every user-visible gameplay capability must have a programmatic path that behaves like a real human-facing client.
+Required invariants:
 
-Use both:
+- no LLM/external service is required for baseline NPC gameplay;
+- only actor-permitted visible state is available;
+- rank only server-advertised legal actions/targets;
+- submit normal typed commands through the ordinary validation/event path;
+- behavior profiles are versioned data, not creature-specific hidden Python;
+- initial profiles remain simple: aggressive melee, ranged, balanced/defensive, support, passive, flee;
+- deterministic stable tie-breaking for MVP;
+- safe fallback on controller failure;
+- human-vs-NPC and AI-vs-AI deterministic tests are required when the combat MVP exists.
+
+Milestone placement:
 
 ```text
-white-box tests
-    unit/component/domain tests
-    may call internal Python interfaces
-
-black-box human-play tests
-    use public REST/WebSocket interfaces
-    authenticate as player/DM/spectator personas
-    never mutate domain/database state as a gameplay shortcut
+v0.1 controller assignment/interface seam
+v0.2 controller eligibility hooks
+v0.3 SimpleNpcController combat MVP
+v0.5 perception/spatial integration
+v0.7 authored schedule-step integration
+v0.8 richer utility/external/LLM controllers
 ```
 
-A feature is not end-to-end complete merely because unit tests pass.
+## Human-play testing
 
-For a gameplay feature to count as playable, a programmatic persona must be able to:
+Every user-visible gameplay capability must be programmatically exercisable through the same public REST/WebSocket contracts a real client uses.
 
-1. discover the capability through public interfaces;
-2. observe only authorized/visible information;
-3. submit the same action/command a real client would submit;
-4. receive the authoritative receipt/events/projections;
-5. continue from the resulting state;
-6. exercise retry/reconnect/timing behavior when relevant;
-7. replay the resulting history to the same canonical state.
+The playtest harness must not become a second rules engine. It can discover legal capabilities from the server, submit commands, observe receipts/events/projections, reconnect, and replay.
 
-Do not teach the playtest client hidden rules. If the test client must duplicate server legality formulas to use a feature, improve capability/action discovery instead.
-
-For scenarios intended to prove autonomous non-human behavior, let `SimpleNpcController` drive the NPC side rather than directly choosing every enemy command in the playtest harness.
-
-## Required human-play questions for every gameplay change
-
-Before considering a feature complete, answer:
+For every gameplay feature, ask:
 
 ```text
-How does a human reach this feature?
-How does the public client discover it?
-Which role/persona owns the action?
-What exact public command/action is submitted?
-What should that role see before and after?
-What information must remain hidden?
-What happens for an invalid choice?
-What happens if the user waits too long?
-What happens on retry or duplicate delivery?
-What happens if the client disconnects/reconnects?
-How is the exact session replayed deterministically?
-Which playtest scenario proves all relevant behavior?
-If a non-human actor participates, which controller/profile owns it and what visible information may it use?
+How does a human reach it?
+How does the client discover it?
+Which role/actor controls it?
+Which public command/action performs it?
+What should be visible before/after?
+What invalid path must be rejected?
+What happens on timeout/retry/reconnect?
+How is replay verified?
+If NPCs participate, which controller/profile drives them?
 ```
 
-If these questions cannot be answered, the feature is not ready to be represented as complete roadmap work.
+Use controllable clocks instead of long sleeps. Failures should capture deterministic scenario/version/seed/content/controller metadata.
 
-## v0.1 playtest harness contract
+## Creator/content authoring
 
-Build the reusable harness under a structure similar to:
+Follow `docs/authoring/CONTENT_AUTHORING.md`.
+
+Required boundaries:
+
+- drafts are mutable authoring state; published definitions are immutable/versioned;
+- finalized campaigns reference published content, never mutable drafts;
+- validate schema, namespace, references, ruleset compatibility, provenance/license, graph reachability, and runtime semantics before publish;
+- Creator/DM Studio APIs produce the same canonical definition schemas the runtime consumes;
+- `EncounterTemplate` is authored content while `Encounter` is a runtime instance;
+- authored `NpcBehaviorProfile` and `NpcPersonalityProfile` are separate concerns;
+- narration is a projection from visible authoritative facts; optional AI narration cannot invent state;
+- do not event-source every editor keystroke.
+
+When adding a new authorable definition type, define its authoring schema, validation, preview/test path, publication/version behavior, and source metadata.
+
+## DM/session operations
+
+Follow `docs/operations/DM_SESSION_OPERATIONS.md`.
+
+Required boundaries:
+
+- lobby/presence coordination is distinct from authoritative gameplay state;
+- invitations, roles, actor-control grants, session open/pause/close, and DM overrides use explicit permissions/commands;
+- disconnect/AFK policies may delegate to `SimpleNpcController` but must record/restore control explicitly;
+- named checkpoints are references to history, not destructive save overwrites;
+- default “restore” semantics create a branch from a checkpoint/sequence rather than deleting history;
+- recaps/journals/chronicles are visibility-filtered projections;
+- session close must handle open encounters/action windows through explicit policy.
+
+## Simulation and Content Testing SDK
+
+Follow `docs/testing/SIMULATION_QUALITY_LAB.md`.
+
+The Simulation/Quality Lab must reuse the real runtime/rules/controllers, never a simplified second combat engine.
+
+Use it to support:
 
 ```text
-tests/playtest/
-├── harness/
-│   ├── client.py
-│   ├── websocket.py
-│   ├── persona.py
-│   ├── clock.py
-│   ├── scenario.py
-│   ├── runner.py
-│   ├── assertions.py
-│   ├── coverage.py
-│   └── artifacts.py
-├── scenarios/
-├── fixtures/
-└── manifests/
+encounter simulation batches
+controller/profile comparisons
+content-version comparisons
+quest/dialogue/progression reachability
+unobtainable item checks
+unusable ability checks
+generated available-action exploration
+performance/correctness experiments
+creator-facing ContentQualityReport
 ```
 
-The harness must support deterministic typed scenarios, personas, seed bundles, transcript/failure artifacts, feature tags, and eventually controllable test clocks.
+Simulation produces evidence, not an opaque universal “balance score.” Every run must be reproducible from engine revision, content lock, controller versions, configuration, and seed bundle. Promote important outliers into permanent regression fixtures.
 
-The public gameplay path must be usable against in-process ASGI first and remain portable to a real local/containerized server later.
+## Trusted extensions and migrations
 
-### Test clocks
+Follow `docs/extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md`.
 
-Never use long real sleeps to test gameplay time.
-
-Preserve the engine's separation of simulation time and wall-clock decision time using injectable clock abstractions. Tests may control injected clocks at the environment/fixture level while player personas still interact only through public gameplay interfaces.
-
-Use exact boundary-time assertions for deadlines.
-
-### Seed separation
-
-Authoritative game RNG, NPC controller variation RNG (if introduced), and scenario/human-behavior RNG must be independent.
-
-Named game streams should remain conceptually separate, for example:
+Non-negotiable distinction:
 
 ```text
-dice
-loot
-encounters
-world
-procedural_generation
+ContentPack    data-only declarative content; no arbitrary executable code
+RulesExtension trusted deployment-installed executable code with explicit capabilities
 ```
 
-The playtest harness may have its own `scenario_behavior_seed`. A generated think-time delay or NPC tie-break must never perturb the next authoritative combat die result.
+Do not allow uploaded content packs to execute Python/shell/dynamic imports.
 
-### Failure artifacts
+Trusted extensions receive narrow typed interfaces, must preserve replay/determinism for authoritative effects, must be explicitly installed/administered, and may not receive unrestricted infrastructure internals by default.
 
-A failed human-play scenario should capture enough information to reproduce it exactly:
+Content upgrades must support:
 
 ```text
-scenario_id
-scenario schema version
-git/engine revision
-ruleset/content lock
-seed bundle
-persona definitions
-NPC controller/profile versions when relevant
-executed steps
-relevant REST receipts
-relevant WebSocket events
-projection snapshots
-authoritative sequence range
-canonical state hashes
-failed assertion
+candidate lock resolution
+semantic diff
+compatibility report
+campaign impact report
+migration plan
+dry run on isolated copy/branch
+required validation/playtests
+automatic checkpoint
+atomic activation
+post-activation replay verification
+rollback when safe or branch when not
 ```
 
-Never store secrets/auth tokens in artifacts.
-
-## v0.1 implementation contracts
-
-### Stable identifiers
-
-Use opaque durable IDs for runtime entities and namespaced stable keys for content definitions. Display names are never identifiers.
-
-Required early concepts include:
-
-```text
-CampaignId
-ActorId
-CharacterId
-CommandId
-EventId
-StreamId
-DefinitionRef
-ContentRef
-ControllerAssignment
-```
-
-Persist exact definition/content version references when replay correctness depends on them.
-
-`ControllerAssignment` should establish the versioned seam for `human`, `simple_npc`, `scripted`, and `system` controllers without implementing advanced AI in v0.1.
-
-### Command envelope
-
-Every state-changing request flows through a typed command envelope. At minimum preserve the semantics planned in `PLAN.md`:
-
-```text
-CommandEnvelope
-    command_id
-    command_type
-    schema_version
-    campaign_id
-    actor_id | null
-    expected_stream_version | null
-    idempotency_key
-    client_sequence | null
-    payload
-```
-
-Authenticated principal/role data comes from server authentication context, never trusted command payload fields.
-
-### Command receipt
-
-Every command returns a stable receipt containing status, resulting event IDs/range when accepted, and a structured rejection when rejected/conflicted/already processed.
-
-Retries with the same idempotency key must not duplicate authoritative events.
-
-### Events
-
-Domain events are append-only authoritative facts. Every event schema is versioned from its first implementation.
-
-Plan for metadata including:
-
-```text
-event_id
-campaign_id
-stream_id
-stream_version
-global/campaign sequence
-simulation_time
-server_timestamp
-actor_id
-command_id
-causation_id
-correlation_id
-content_lock_hash
-event_type
-schema_version
-payload
-```
-
-Do not use operational logs or NPC decision traces as authoritative state.
-
-### Aggregate and stream boundaries
-
-Prefer explicit, narrow ownership rather than one mutable global object.
-
-Initial stream candidates:
-
-```text
-campaign:{campaign_id}
-actor:{actor_id}
-character:{character_id}
-encounter:{encounter_id}
-timeline:{timeline_id}
-inventory:{inventory_id}
-quest:{quest_id}
-```
-
-Before introducing a new stream, define:
-
-- what state it owns;
-- which commands may mutate it;
-- which events it emits;
-- its concurrency boundary;
-- snapshot/replay behavior;
-- whether a transaction must atomically affect another stream.
-
-Avoid cross-stream writes unless the application service explicitly coordinates them transactionally.
-
-### Event store
-
-The PostgreSQL design should support at minimum:
-
-```text
-event_streams
-domain_events
-command_receipts
-snapshots
-projection_versions
-transactional_outbox
-```
-
-`domain_events` should support efficient lookup by stream/version, campaign sequence, event ID, command ID, event type, and campaign/time ranges as needed by planned queries.
-
-Enforce uniqueness for event IDs, command idempotency, and stream versions at the database level where possible.
-
-### Deterministic RNG
-
-Do not use an uncontrolled process-global RNG for authoritative game results.
-
-Use deterministic named streams so unrelated random operations do not perturb each other. Initial conceptual streams:
-
-```text
-dice
-loot
-encounters
-world
-procedural_generation
-```
-
-Each authoritative random result must be reproducible from pinned state/seed/stream position and should emit or be represented by an auditable domain event.
-
-Weather generation, for example, must not silently change the next combat die result merely because it consumed randomness from one shared generator.
-
-The initial `SimpleNpcController` should use stable deterministic tie-breaking without RNG. If controller variation is added later, it gets a dedicated controller stream separate from all authoritative game and human-play streams.
-
-### Projections
-
-Treat projections as rebuildable derived views, not authorities.
-
-Early projection seams should anticipate:
-
-```text
-CampaignProjection
-ActorProjection
-CharacterSheetProjection
-EncounterProjection
-TimelineProjection
-AvailableActionsProjection
-ControllerDecisionView
-GameLogProjection
-```
-
-Every projection needs a schema/build version and last processed authoritative sequence.
-
-`ControllerDecisionView` must be visibility-filtered and must not expose DM-only/omniscient data merely because the controller runs server-side.
-
-### REST envelope
-
-Keep success/error/query responses consistent from the beginning. Responses should carry relevant request/correlation IDs and projection/version metadata rather than forcing clients to infer freshness.
-
-Use opaque cursor pagination for unbounded collections.
-
-### WebSocket protocol seam
-
-Initial live-protocol design should support these semantic messages even if v0.1 only implements a subset:
-
-```text
-client.hello
-client.subscribe
-client.unsubscribe
-client.ack
-client.ping
-
-server.ready
-server.event
-server.resync_required
-server.error
-server.pong
-```
-
-Plan for monotonic ordering, acknowledgement/resume, snapshot+delta synchronization, bounded backpressure, and server-side visibility filtering. Never silently drop authoritative events to a slow client.
-
-### Rules/action expression boundary
-
-Content definitions may use typed declarative structures such as `RequirementExpr`, `ChoiceGroup`, `Grant`, modifiers, effects, action definitions, and `NpcBehaviorProfile` references.
-
-Never execute arbitrary Python/code embedded in third-party content packs.
-
-The long-term action/effect/controller configuration DSL must remain versioned, typed, validated, deterministic, and safe to inspect/replay.
-
-## Reference SRD mapping discipline
-
-Do not bulk-import SRD content before the engine schemas can represent and test it.
-
-Track categories conceptually as:
-
-```text
-Category       Schema ready   Data mapped   Conformance tests   Human-play scenarios
-Abilities
-Skills
-Species
-Backgrounds
-Classes
-Subclasses
-Feats
-Actions
-Conditions
-Equipment
-Spells/Abilities
-Creatures
-```
-
-Only redistribute content covered by an appropriate license and preserve required attribution/source metadata.
-
-When a content category becomes playable, add at least one representative human-play scenario before expanding the catalog broadly.
-
-Creature definitions may reference simple NPC behavior profiles, but the behavior profile is engine/controller configuration rather than copied descriptive monster text.
-
-## Reference integration campaign
-
-Use the deliberately small **Testing Grounds** campaign as the canonical human-play/integration fixture instead of relying only on isolated unit examples.
-
-Target shape:
-
-```text
-Testing Grounds
-├── Town
-│   ├── Tavern
-│   ├── Merchant
-│   ├── Blacksmith
-│   └── Gate
-└── Forest
-    ├── Road
-    ├── Hidden Path
-    ├── Goblin Camp
-    └── Ruins
-```
-
-Eventually include a few NPCs, quests, one vendor, one crafting recipe, a hidden/discovery case, dialogue, faction state, scheduled world event, normal encounter, timed encounter, and later ATB/real-time cases. Add pieces only when the corresponding milestone exists.
-
-Once v0.3 lands, non-human encounter participants in the main Testing Grounds journey should normally use `SimpleNpcController` so the scenario proves a human-facing client can play against autonomous enemies.
-
-Maintain one long-form campaign journey that grows with the engine so a test persona can actually create a character, enter the world, explore, interact, fight AI-controlled non-human actors, progress, reconnect, and replay the campaign instead of only running disconnected subsystem demos.
-
-## Coverage manifest
-
-Maintain a machine-readable mapping from planned/implemented features to tests.
-
-For each gameplay feature, track as applicable:
-
-```text
-feature_id
-milestone
-implementation_status
-unit tests
-integration tests
-human-play scenario IDs
-timing modes
-roles/personas
-controller/profile variants
-spatial adapters
-ruleset/content refs
-negative cases
-replay cases
-```
-
-A milestone cannot be declared complete while an implemented user-visible feature lacks a public human-play scenario unless the feature is explicitly internal-only.
-
-## Python and async requirements
-
-- Target Python 3.12+.
-- Use modern typing throughout.
-- Use FastAPI/Pydantic v2 conventions appropriate to current versions.
-- Use SQLAlchemy 2.x async APIs and async-capable PostgreSQL drivers.
-- Never perform blocking DB/network/file operations directly on the async event loop.
-- Never use `time.sleep()` for game progression, NPC thinking, decision-window testing, or inside async request handling.
-- Avoid ordinary `threading.Lock` in async request paths; use async-aware synchronization when coordination is necessary.
-- Isolate CPU-heavy work such as large replay batches or pathfinding from the event loop through bounded worker execution when needed.
-- Use async-safe multi-client playtest clients and structured concurrency.
-- Keep baseline NPC decisions bounded and event-driven; do not introduce uncontrolled polling loops.
-- Prefer explicit transactions and deterministic conflict handling.
+Never silently auto-upgrade active campaign mechanics.
 
 ## Architecture boundaries
 
-Keep these responsibilities distinct:
+Keep responsibilities distinct:
 
 ```text
 api/             transport/auth/schema adaptation
-application/     command/query orchestration and transaction boundaries
-domain/          deterministic business/game state and invariants
-rules/           typed rules evaluation interfaces/runtime
-rulesets/        versioned licensed/custom content and mechanics
-controllers/     replaceable actor decision policies; no rules authority
-persistence/     event store, snapshots, projections, outbox
-infrastructure/  concrete external integrations and process concerns
-tests/playtest/  black-box personas/scenarios using public interfaces
+application/     orchestration/transactions
+ domain/          deterministic game state/invariants
+rules/           rules evaluation/runtime
+rulesets/        licensed/custom mechanics/content integration
+controllers/     replaceable actor decisions; no rules authority
+authoring/       mutable drafts/validation/publishing workflows
+persistence/     events/snapshots/projections/outbox
+infrastructure/  external/process concerns
+simulation/      isolated quality/simulation workers using real runtime
+tests/playtest/  black-box public-interface personas/scenarios
 ```
 
-Domain code should not import FastAPI, SQLAlchemy ORM sessions, WebSocket connections, external AI clients, or other transport/infrastructure concerns.
+Published content and trusted extension packages may live under other concrete directories, but the conceptual boundaries above must remain.
 
-Controllers may consume typed visibility-filtered decision views and available-action information, then submit normal commands. They may not mutate domain state directly.
+## Reference content discipline
 
-The playtest harness and NPC controllers must not become second rules engines.
+Do not bulk-import content before schemas, validators, and representative playtests can support it.
 
-## Test requirements
+Track categories such as abilities, skills, species, backgrounds, classes, feats, actions, conditions, equipment, creatures, quests, dialogue, encounters, and world content by:
 
-Every completed change should add the narrowest meaningful tests and preserve the milestone's broader invariants.
+```text
+schema ready
+data mapped
+validation ready
+conformance tests
+human-play scenarios
+simulation/static-analysis checks where relevant
+```
 
-For v0.1, prioritize:
+Only redistribute appropriately licensed material and preserve attribution/source metadata.
 
-- typed domain unit tests;
-- controller assignment/interface seam tests;
-- deterministic RNG tests;
-- identical-command-stream replay tests;
-- canonical state hash tests;
-- idempotent retry tests;
-- stale stream-version conflict tests;
-- event schema/version tests;
-- async persistence integration tests when PostgreSQL is introduced;
-- projection rebuild tests when projections appear;
-- API contract tests when endpoints appear;
-- black-box public API playtest smoke scenarios as soon as the public command path exists;
-- WebSocket subscribe/resume scenarios as soon as the live protocol exists;
-- failure transcript/seed capture for human-play tests.
+## Testing Grounds
 
-When `SimpleNpcController` becomes implemented, add deterministic controller unit/integration tests plus black-box human-vs-NPC playtests instead of waiting for v0.8.
+`Testing Grounds` is the canonical growing integration campaign.
 
-Use ASGI-native async testing for async API paths rather than introducing blocking test clients into async tests.
+It should eventually prove one continuous journey through:
 
-Whenever timing is involved, use controllable clocks rather than sleeping through real decision/game durations.
+```text
+content install -> campaign/lobby/session -> character creation -> town/social/quest
+-> trade/crafting -> travel/discovery -> autonomous NPC encounter -> rewards/progression
+-> disconnect/reconnect -> checkpoint/branch -> session close/recap -> replay
+```
 
-## Bug regression rule
+Authored encounters should use real `EncounterTemplate`s. From v0.3 onward, canonical enemies normally use `SimpleNpcController`.
 
-Every player-visible bug fix should add the narrowest durable regression test.
+## Required completion checks
 
-If a human could observe the bug through normal gameplay, add or extend a human-play scenario unless an existing scenario already proves the corrected behavior.
+Before declaring work complete:
 
-If the bug affects autonomous NPC behavior, preserve a deterministic controller/profile fixture reproducing the decision as well.
-
-A bug fix is incomplete when the same player-visible failure can silently return without a regression signal.
-
-## Required checks before declaring work complete
-
-1. Re-read the active milestone exit criteria in `PLAN.md`.
-2. Re-read the relevant human-play requirements in `docs/testing/HUMAN_PLAYTESTING.md`.
-3. Re-read `docs/ai/SIMPLE_NPC_AI.md` when non-human controllers are involved.
-4. Run all relevant unit/integration/determinism/replay tests.
-5. Run or add the relevant black-box human-play scenarios for user-visible behavior.
-6. Verify no blocking operation, polling loop, or real-time sleep was introduced into async/timing/controller tests.
-7. Verify state changes occur through commands/events rather than direct client/controller mutation.
-8. Verify neither the playtest client nor NPC controller duplicated hidden server rules.
-9. Verify NPC controllers receive only actor-permitted visible information.
-10. Verify new public schemas and controller/profile schemas are versioned/documented.
-11. Verify visibility/security boundaries when new data becomes client-visible or controller-visible.
-12. Verify retry, timeout, reconnect, reaction, and controller fallback behavior where relevant.
-13. Verify replay/content/controller provenance when rules/content/controller definitions are involved.
-14. Update the coverage manifest for changed gameplay features and controller variants.
+1. Re-read the active milestone and relevant normative specs.
+2. Run relevant unit/integration/determinism/replay tests.
+3. Add/run black-box human-play scenarios for user-visible gameplay.
+4. Add/run controller tests when NPC autonomy is involved.
+5. Add/run authoring validation/publish tests for new content schemas.
+6. Add/run simulation/reachability/content-quality checks when the feature affects authored graphs/encounters/content usability.
+7. Verify no blocking operations, polling loops, or real sleeps were introduced into async/timing paths.
+8. Verify state changes still pass through proper commands/events.
+9. Verify visibility boundaries for clients/controllers/recaps.
+10. Verify public/content/controller/extension schemas are versioned.
+11. Verify source/license provenance for distributable content.
+12. Verify retry/timeout/reconnect/controller fallback behavior where relevant.
+13. Verify migration/upcast/content-lock/extension compatibility when persistent interpretation changes.
+14. Update test/feature coverage manifests.
 15. Update `PLAN.md` only when architecture/roadmap decisions changed or milestone checkboxes are objectively satisfied.
-16. Do not claim a milestone or PR slice complete when its public play path and exit criteria are not demonstrated.
+16. Do not claim completion when the relevant public play path, authoring path, or migration/test evidence is missing.
 
 ## Preventing project drift
 
 Do not:
 
-- create a second roadmap that competes with `PLAN.md`;
-- create a second testing architecture that competes with `docs/testing/HUMAN_PLAYTESTING.md`;
-- create a competing baseline NPC AI design instead of following `docs/ai/SIMPLE_NPC_AI.md`;
-- require an LLM/external AI service for baseline NPC/creature gameplay before the advanced-AI milestone;
-- implement post-v1.0 distributed/MMO work during an earlier milestone unless explicitly requested;
-- hard-code one client, renderer, map type, or combat timing mode into core domain logic;
-- make Redis or in-memory state the only authoritative persistence layer;
-- put proprietary non-licensed D&D text/content into the repository;
-- let AI/LLM output mutate state without typed command/rules validation;
-- give server-side AI omniscient state that the controlled actor is not allowed to perceive;
-- consume authoritative dice/loot/world RNG merely to vary NPC decision tie-breaking;
-- bypass event history with direct database updates for gameplay changes;
-- treat projections, AI decision traces, or logs as the source of truth;
-- introduce client-side or controller-side hidden rules to make a feature or test work;
-- mark a gameplay feature complete without a programmatic public-interface play path;
-- use sleeps to make timed-turn or NPC-think tests pass;
-- hide flaky scenarios instead of preserving their seed/artifact and fixing the cause.
+- create competing roadmaps or replacement subsystem architectures;
+- require an LLM for baseline NPC play;
+- give AI omniscient state;
+- implement hidden client/controller rules;
+- let ordinary content packs execute arbitrary code;
+- let creator tools bypass published-definition validation/versioning;
+- make checkpoints destructive history rewrites;
+- make recaps/journals authoritative state;
+- build a second simplified simulator instead of reusing the real runtime;
+- publish structurally invalid content because a UI happens to accept it;
+- silently auto-upgrade campaign mechanics;
+- bypass event history with direct gameplay DB updates;
+- use Redis/in-memory state as the only authority;
+- hide flaky tests instead of preserving their reproducible artifact;
+- implement post-v1.0 distributed/MMO/marketplace scope during earlier milestones unless explicitly requested.
 
-When a request conflicts with a non-negotiable architectural rule in `PLAN.md`, preserve the architectural invariant and implement the requested behavior through the planned extension point.
+When a request conflicts with a non-negotiable architecture rule, preserve the invariant and implement the desired behavior through the planned extension point.
