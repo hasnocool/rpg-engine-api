@@ -20,7 +20,7 @@ from rpg_engine_api.persistence.event_store import InMemoryEventStore, StreamVer
 
 
 class EngineService:
-    """Small authoritative command processor used by the initial P0/P1 slice."""
+    """Small authoritative command processor used by the initial playable slices."""
 
     def __init__(self, store: InMemoryEventStore | None = None) -> None:
         self.store = store or InMemoryEventStore()
@@ -176,11 +176,13 @@ class EngineService:
         campaign_id = command.campaign_id or str(command.payload.get("campaign_id", ""))
         if campaign_id not in self.campaigns:
             raise ValueError("campaign does not exist")
-        rng = self._rng[campaign_id]
-        result = rng.roll(str(command.payload.get("expression", "1d20")), stream="dice")
         stream_id = f"campaign:{campaign_id}"
         actual = await self.store.current_version(stream_id)
         expected = command.expected_stream_version if command.expected_stream_version is not None else actual
+        if expected != actual:
+            raise StreamVersionConflict(stream_id, expected, actual)
+        rng = self._rng[campaign_id]
+        result = rng.roll(str(command.payload.get("expression", "1d20")), stream="dice")
         event = DomainEvent(
             event_type="DiceRolled",
             campaign_id=campaign_id,
@@ -235,9 +237,24 @@ class EngineService:
             }
         ]
 
+    def live_snapshot(self, campaign_id: str) -> dict[str, Any]:
+        campaign = self.campaigns[campaign_id]
+        actors = {
+            actor_id: self.actors[actor_id].model_dump(mode="json")
+            for actor_id in sorted(campaign.actor_ids)
+            if actor_id in self.actors
+        }
+        return {"campaign": campaign.model_dump(mode="json"), "actors": actors}
+
     async def canonical_hash(self, campaign_id: str) -> str:
         snapshot = await self.replay_snapshot(campaign_id)
         encoded = json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    def live_hash(self, campaign_id: str) -> str:
+        encoded = json.dumps(
+            self.live_snapshot(campaign_id), sort_keys=True, separators=(",", ":")
+        ).encode()
         return hashlib.sha256(encoded).hexdigest()
 
     async def replay_snapshot(self, campaign_id: str) -> dict[str, Any]:
