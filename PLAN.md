@@ -9,9 +9,9 @@
 **Initial compatible rules package:** SRD 5.2.1-based ruleset  
 **Canonical planning document:** this file
 
-The goal is to let any client—Godot, Unity, browser, mobile, TUI, SSH, Discord-style UI, AI narrator, automation service, or another game engine—create and play a D&D-style RPG by treating this API as the authoritative game simulation.
+The goal is to let any client—Godot, Unity, browser, mobile, TUI, SSH, Discord-style UI, AI narrator, automation service, creator tool, simulation worker, or another game engine—create, author, test, operate, and play a D&D-style RPG by treating this API as the authoritative game simulation.
 
-The engine owns the rules and state. Clients discover capabilities, submit commands, receive events, and render projections.
+The engine owns the rules and state. Clients discover capabilities, submit commands, receive events, render projections, and use explicit authoring/operations APIs rather than bypassing the authoritative runtime.
 
 ---
 
@@ -39,7 +39,11 @@ The authoritative server owns:
 - multiplayer permissions and actor-control grants;
 - player-facing game/combat logs and administrative audit logs;
 - thin-client capability discovery;
-- replaceable actor controllers, including a deterministic baseline NPC AI and later advanced AI/scripted controller boundaries.
+- replaceable actor controllers, including a deterministic baseline NPC AI and later advanced AI/scripted controller boundaries;
+- creator workspaces, content validation/publication, encounter templates, and content versioning;
+- lobbies, invitations, ready checks, live DM/session operations, checkpoints/branches, recaps, and journals;
+- simulation, content-quality, reachability, balance-evidence, and regression tooling;
+- an explicit boundary between data-only content packs and trusted executable rules extensions.
 
 Clients should primarily:
 
@@ -48,7 +52,8 @@ Clients should primarily:
 3. discover legal actions and creation choices;
 4. submit typed commands;
 5. subscribe to live events;
-6. render the resulting state.
+6. render the resulting state;
+7. use explicit authoring/session/quality APIs when acting as creators or administrators.
 
 A client must never need to reimplement hidden rules to stay synchronized with the server.
 
@@ -96,7 +101,7 @@ Every distributable content record must retain source/license provenance.
 6. **Rules are pluggable.** The core must not become an SRD monolith.
 7. **Clients are replaceable.** No rule may require a specific rendering engine.
 8. **Determinism is testable.** State transitions must be reproducible.
-9. **Version everything affecting replay.** Rules, content, schemas, events, commands, snapshots, projections, campaign settings, and controller behavior versions.
+9. **Version everything affecting replay.** Rules, content, schemas, events, commands, snapshots, projections, campaign settings, controller behavior versions, and trusted extension behavior.
 10. **AI is a controller, not an authority.** It submits normal commands; the initial autonomous NPC AI is the deterministic `SimpleNpcController`, not an LLM requirement.
 11. **Async paths remain non-blocking.** DB/network I/O uses async-safe operations; heavy CPU work is isolated.
 12. **Concurrency is explicit.** Stream versions, idempotency, and deterministic ordering protect multiplayer state.
@@ -109,6 +114,12 @@ Every distributable content record must retain source/license provenance.
 19. **Every user-visible gameplay capability must be programmatically playable through public client interfaces.** Unit tests alone do not prove a gameplay feature is complete.
 20. **The end-to-end playtest client must remain thin.** It may discover legal capabilities from the server, but must not duplicate hidden rules to make tests work.
 21. **The baseline NPC AI remains simple, deterministic, replaceable, and non-omniscient.** Advanced utility AI, behavior trees, planners, and LLM/external-model adapters build on the same controller/command boundary rather than replacing it.
+22. **Authoring drafts and published content are different lifecycles.** Mutable drafts never become live campaign definitions until validation and explicit publication create immutable versioned artifacts.
+23. **Creator tools are not gameplay backdoors.** Creator/DM Studio APIs generate validated definitions or privileged commands; they do not patch authoritative campaign state directly.
+24. **Ordinary content packs are data-only.** Arbitrary executable code belongs only in explicitly trusted deployment-installed extensions with narrow capabilities.
+25. **Checkpoints preserve history.** The default restore workflow creates a branch from history instead of destructively rewriting the authoritative event stream.
+26. **Simulation uses the real runtime.** Balance/content-quality tooling may automate the engine but must not become a simplified second rules/combat implementation.
+27. **Content upgrades are explicit.** Active campaigns do not silently receive mechanic-changing pack/extension revisions; upgrades use diff, compatibility, impact, migration dry-run, checkpoint, activation, and replay verification.
 
 ---
 
@@ -120,9 +131,9 @@ Every durable entity has an opaque durable ID and a separate stable content key.
 
 ```text
 EntityIdentity
-    id                 # opaque UUID/ULID-like identity
-    key                # namespaced stable key
-    display_name_key   # localization key
+    id
+    key
+    display_name_key
 ```
 
 Examples:
@@ -211,21 +222,7 @@ Grant
     source_ref
 ```
 
-Grant types include:
-
-```text
-feature
-proficiency
-resource
-action
-movement_mode
-sense
-language
-item
-spell_or_power
-progression_currency
-tag
-```
+Grant types include feature, proficiency, resource, action, movement mode, sense, language, item, spell/power, progression currency, and tags.
 
 ## 4.6 Visibility
 
@@ -236,17 +233,7 @@ VisibilityPolicy
     redact_fields
 ```
 
-Audiences include:
-
-```text
-public
-campaign_members
-party
-controller_only
-dm_only
-service_only
-custom_role
-```
+Audiences include public, campaign members, party, controller-only, DM-only, service-only, and custom roles.
 
 Visibility is applied before response/event serialization and before building controller decision views.
 
@@ -282,25 +269,7 @@ RulesetManifest
     entry_pack_ids
 ```
 
-Capabilities may include:
-
-```text
-initiative
-turn_economy
-active_time_translation
-real_time_translation
-character_creation
-leveling
-multiclassing
-spellcasting
-conditions
-inventory
-encumbrance
-spatial_rules
-rests
-crafting
-economy
-```
+Capabilities may include initiative, timing/economy translations, character creation, leveling/multiclassing, spellcasting, conditions, inventory/encumbrance, spatial rules, rests, crafting, and economy.
 
 ## 5.2 Content pack manifest
 
@@ -321,25 +290,13 @@ ContentPackManifest
     content_hash
 ```
 
-A pack may contain classes, species, backgrounds, features, progression graphs, actions, spells/powers, items, creatures, conditions, quests, dialogue, recipes, world/location templates, campaign templates, and references to versioned NPC behavior profiles.
+A pack may contain classes, species, backgrounds, features, progression graphs, actions, spells/powers, items, creatures, conditions, quests, dialogue, recipes, world/location templates, campaign templates, encounter templates, narration templates, NPC personality profiles, and references to versioned NPC behavior profiles.
 
 ## 5.3 Dependency and conflict resolution
 
-Activation must:
-
-1. resolve dependency versions;
-2. reject unsupported cycles;
-3. reject incompatible engine/ruleset ranges;
-4. reject duplicate un-namespaced keys;
-5. apply overrides only when explicitly declared;
-6. create a deterministic ordered content lock;
-7. validate references before activation.
-
-There is no silent last-write-wins behavior.
+Activation resolves dependencies, rejects unsupported cycles/incompatible ranges/duplicate keys, applies overrides only when declared, creates a deterministic ordered lock, and validates all references. There is no silent last-write-wins behavior.
 
 ## 5.4 Campaign content lock
-
-Every finalized campaign configuration revision pins content.
 
 ```text
 CampaignContentLock
@@ -350,9 +307,7 @@ CampaignContentLock
     combined_hash
 ```
 
-Replay uses the content lock active at the event sequence being reconstructed.
-
-Controller behavior profile references used by actor definitions/state are also versioned so deterministic autonomous simulations can identify the exact profile/controller revision in use.
+Replay uses the content lock active at the event sequence being reconstructed. Controller profile and trusted extension versions affecting interpretation are likewise pinned or otherwise recoverable.
 
 ## 5.5 Mid-campaign content revisions
 
@@ -367,19 +322,7 @@ Activation either migrates affected state safely or fails with an incompatibilit
 
 ## 5.6 House rules
 
-House rules are typed data, not code patches.
-
-```text
-HouseRuleDefinition
-    id
-    target_rule_key
-    operation
-    parameters
-    prerequisites
-    compatibility
-```
-
-Supported operations may replace a policy, adjust numeric parameters, enable/disable a capability, or select a ruleset-defined variant.
+House rules are typed data, not arbitrary code patches.
 
 ---
 
@@ -387,62 +330,7 @@ Supported operations may replace a policy, adjust numeric parameters, enable/dis
 
 Clients and controllers submit **commands**. The engine emits **events**.
 
-Example commands:
-
-```text
-CreateCampaign
-CreateActor
-Attack
-CastAbility
-MoveActor
-Dash
-Dodge
-Disengage
-Help
-Hide
-Influence
-Ready
-Search
-Study
-UseItem
-EquipItem
-Interact
-Talk
-Rest
-EndTurn
-AcceptQuest
-Travel
-BeginCharacterCreation
-FinalizeCharacter
-BeginLevelUp
-```
-
-Example events:
-
-```text
-CommandAccepted
-CommandRejected
-CampaignCreated
-ActorCreated
-AttackDeclared
-AttackRolled
-AttackHit
-AttackMissed
-DamageApplied
-HealingApplied
-ActorMoved
-AbilityActivated
-EffectApplied
-ConditionApplied
-TurnStarted
-TurnTimedOut
-ActorDefeated
-ItemAcquired
-QuestUpdated
-WorldTimeAdvanced
-```
-
-Never allow direct authoritative patches such as changing HP or coordinates from a client or AI-controller payload.
+Never allow direct authoritative patches such as changing HP or coordinates from a client, creator UI, simulation harness, or AI-controller payload.
 
 Processing path:
 
@@ -464,70 +352,17 @@ command
 
 ## 6.1 Deterministic randomness
 
-The server controls RNG state. Dice/random results generate events.
+The server controls RNG state. Dice/random results generate events. Same initial state + rules/content versions + RNG seed + command stream must produce the same canonical outcome.
 
-```text
-DiceRolled
-    expression
-    rolls
-    modifier
-    total
-    purpose
-    rng_sequence
-```
-
-Same initial state + rules/content versions + RNG seed + command stream must produce the same canonical outcome.
-
-The baseline `SimpleNpcController` uses stable deterministic tie-breaking and should not need randomness. If future controller variation is added, it uses an isolated controller RNG stream rather than consuming dice, loot, world, encounter, or human-play behavior RNG streams.
+Named RNG streams separate dice, loot, encounters, world/procedural generation, optional controller variation, and playtest/scenario behavior.
 
 ## 6.2 Event metadata
 
-Each persisted event eventually carries:
-
-```text
-event_id
-campaign_id
-stream_id
-stream_version
-sequence
-simulation_time
-server_timestamp
-actor_id
-command_id
-causation_id
-correlation_id
-ruleset_id
-ruleset_version
-content_lock_hash
-event_type
-schema_version
-payload
-```
-
-Controller decision traces may be stored for diagnostics but are not authoritative state; the accepted command and resulting domain events remain replay authority.
+Persist event/stream/campaign sequencing, simulation/server time, actor/command/causation/correlation IDs, rules/content lock data, event type/schema version, and payload. Controller decision traces are diagnostic, not authoritative.
 
 ## 6.3 Event sourcing and projections
 
-```text
-commands
-    -> domain events
-    -> event store
-    -> projections
-```
-
-Useful projections include:
-
-- campaign state;
-- actor/character sheet;
-- encounter state;
-- inventory;
-- quests;
-- map occupancy;
-- timeline;
-- available actions;
-- role-filtered world state;
-- controller-safe decision views;
-- game/combat logs.
+Authoritative events feed rebuildable projections such as campaign state, actors/characters, encounters, inventory, quests, maps, timeline, available actions, visibility-filtered world state, controller-safe views, logs, journals, and recaps.
 
 Snapshots reduce replay cost but never replace authoritative history.
 
@@ -535,433 +370,46 @@ Snapshots reduce replay cost but never replace authoritative history.
 
 # 7. First-class time and scheduler
 
-Traditional rounds are one scheduling policy, not the engine itself.
+The engine separates simulation time from wall-clock decision time and supports readiness, deadlines, action duration, cooldowns, delays, interrupts, reactions, periodic effects, world events, NPC schedules, and actor/controller availability.
 
-The engine understands:
-
-- simulation time;
-- wall-clock decision time;
-- readiness;
-- deadlines;
-- action duration;
-- cooldowns;
-- delays;
-- interrupts;
-- reaction windows;
-- periodic effects;
-- world events;
-- NPC schedules;
-- actor/controller availability.
-
-## 7.1 Two clocks
-
-**Simulation time** drives the fictional world: rounds, effects, travel, weather, crafting, quests, rests, and schedules.
-
-**Wall-clock decision time** limits how long a connected user may make a choice.
-
-Never use wall-clock passage as the authoritative simulation clock.
-
-Controller eligibility is driven by scheduler/domain events rather than busy polling. Artificial NPC think delays, if later enabled, use scheduler/clock abstractions and never blocking sleeps.
-
-## 7.2 Timing modes
-
-### `turn_based`
-
-Traditional initiative-driven rounds and turns.
-
-### `timed_turn_based`
-
-Traditional initiative plus a configurable real-world deadline.
+Timing modes:
 
 ```text
-player decision window = 15 seconds
-timeout policy = forfeit_turn
+turn_based
+timed_turn_based
+active_time
+real_time_with_pause
+real_time
+hybrid
 ```
 
-Required timeout-policy hooks:
-
-```text
-forfeit_turn
-auto_dodge
-auto_defend
-repeat_previous_action
-ai_control
-pause_game
-dm_decides
-```
-
-### `active_time`
-
-Final-Fantasy-style readiness. Actors become ready according to a ruleset-defined readiness calculation. Other actors may continue accumulating readiness while a player decides.
-
-### `real_time_with_pause`
-
-Continuous simulation with authoritative pausing.
-
-### `real_time`
-
-Continuous MMO/action-RPG semantics with cooldowns, cast/windup time, movement, resource regeneration, interrupts, periodic effects, and reaction windows.
-
-### `hybrid`
-
-Different actor/system policies may coexist.
-
-```text
-players = active_time
-boss = real_time
-summons = automatic_real_time
-world = real_time
-dialogue = turn_based
-```
-
-## 7.3 Scheduled events
-
-Conceptual types:
-
-```text
-ActorReady
-TurnStarted
-TurnEnded
-ActionWindowOpened
-ActionWindowExpired
-ActionStarted
-ActionCompleted
-ActionInterrupted
-ReactionWindowOpened
-ReactionWindowClosed
-MovementStarted
-MovementCompleted
-AbilityCastStarted
-AbilityCastCompleted
-CooldownExpired
-ConditionTicked
-ConditionExpired
-WorldEventTriggered
-NpcScheduleTriggered
-ControllerDecisionRequested
-EncounterStarted
-EncounterEnded
-```
-
-Ordering uses simulation timestamp plus deterministic priority/tie-break fields.
-
-No request handler or controller sleeps to wait for simulation time.
+No request handler, controller, playtest, or simulation worker sleeps to represent simulation time. Controller eligibility is event-driven rather than busy-polled.
 
 ---
 
 # 8. Universal action transaction model
 
-Combat, movement, social, inventory, exploration, rest, and custom actions use a common definition.
+All gameplay actions use a common definition/lifecycle with costs, prerequisites, targeting, timing, effects, cooldowns, interruptions, deterministic conflict ordering, and available-action discovery.
 
-```text
-ActionDefinition
-    id
-    ruleset_id
-    name
-    category
-    timing
-    costs
-    prerequisites
-    targeting
-    range
-    movement_requirements
-    resolution
-    effects
-    cooldown
-    interruptibility
-    tags
-```
-
-Categories include:
-
-```text
-attack
-movement
-magic
-interaction
-exploration
-social
-inventory
-rest
-reaction
-special
-custom
-```
-
-## 8.1 Action instance lifecycle
-
-```text
-ActionInstance
-    id
-    definition_ref
-    actor_id
-    targets
-    status
-    declared_sequence
-    scheduled_start
-    scheduled_completion
-    reserved_costs
-    context
-```
-
-Statuses:
-
-```text
-proposed
-declared
-queued
-executing
-waiting_for_reaction
-interrupted
-cancelled
-resolved
-completed
-failed
-```
-
-Lifecycle:
-
-```text
-ActionProposed
-    -> validation
-    -> ActionDeclared
-    -> reserve/pay costs
-    -> optional windup/cast
-    -> optional reaction windows
-    -> resolution
-    -> effects/events
-    -> cooldown/recovery
-    -> ActionCompleted
-```
-
-## 8.2 Cost semantics
-
-Every cost declares one of:
-
-```text
-pay_on_declare
-reserve_on_declare_pay_on_execute
-pay_on_success
-pay_on_completion
-```
-
-Refund behavior is explicit for validation failure, cancellation, interruption, timeout, and server conflict.
-
-Interruption is not generic rollback: already-emitted effects remain unless the rules specifically reverse them.
-
-## 8.3 Simultaneous/conflicting commands
-
-Authoritative ordering:
-
-```text
-simulation_time
-scheduler_priority
-stream_sequence_or_tie_breaker
-```
-
-Wall-clock arrival time alone does not decide simultaneous game outcomes.
-
-Stale commands are safely revalidated or rejected with `state_conflict`; they never overwrite newer state.
-
-## 8.4 Available-action discovery
-
-```http
-GET /api/v1/actors/{actor_id}/available-actions
-```
-
-A response exposes legal action schemas, costs, target constraints, movement allowance, timing state, and decision deadline without requiring client-side rules logic.
-
-Controllers consume the same semantic available-action information through an application-level/controller-safe interface. The controller ranks legal choices; it does not independently make illegal choices legal.
+Clients/controllers consume server-advertised legal actions. They do not independently redefine legality.
 
 ---
 
 # 9. Effects, features, resources, abilities, and conditions
 
-## 9.1 Effect pipeline
-
-```text
-Effect
-    source
-    targets
-    trigger
-    requirements
-    modifiers
-    operations
-    duration
-    stacking_policy
-    expiration
-```
-
-Triggers include apply/remove, turn start/end, action declaration, attacks, damage, movement, entering/leaving areas, ability activation, reactions, and elapsed time.
-
-Modifiers may affect armor/defense, checks, attacks, saves, movement, damage, healing, resource cost, cooldown, action duration, or readiness rate.
-
-Prefer declarative reusable effects over arbitrary one-off imperative handlers.
-
-## 9.2 Feature definitions
-
-```text
-FeatureDefinition
-    id
-    key
-    category
-    prerequisites
-    choice_groups
-    grants
-    modifiers
-    triggered_effects
-    actions
-    resources
-    source_metadata
-```
-
-Features may come from class, subclass, species, background, feat, item, condition, quest reward, campaign grant, or custom progression.
-
-## 9.3 Resource definitions
-
-```text
-ResourceDefinition
-    id
-    key
-    value_type
-    minimum
-    maximum_formula
-    recovery_rules
-    spend_rules
-    visibility
-```
-
-```text
-ResourceState
-    definition_ref
-    current
-    maximum
-    reserved
-    last_changed_sequence
-```
-
-Resources cover health, class resources, spell slots, stamina-like systems, charges, readiness, and cooldown tokens.
-
-## 9.4 Health projection
-
-Health is rules-driven resource state, with a convenience projection:
-
-```text
-HealthProjection
-    current
-    maximum
-    temporary
-    status
-    recovery_options
-```
-
-Rules determine consequences at zero and recovery behavior.
-
-## 9.5 Spells/powers/techniques
-
-```text
-AbilityDefinition
-    id
-    key
-    ability_type
-    level_or_rank
-    school_or_category
-    activation_timing
-    action_cost
-    cast_or_windup_duration
-    range
-    target_schema
-    area_schema
-    components_or_requirements
-    resource_costs
-    duration
-    concentration_or_maintenance_policy
-    effects
-    scaling
-    interruption_policy
-    tags
-    source_metadata
-```
-
-Character state separates known abilities, prepared/active loadouts, resources, and cooldown state.
-
-## 9.6 Conditions
-
-```text
-ConditionDefinition
-    id
-    key
-    prerequisites
-    modifiers
-    grants
-    restrictions
-    triggered_effects
-    stacking_policy
-    duration_policy
-    removal_rules
-    visibility
-```
-
-Condition instances retain source, start sequence/time, stacks, duration, and scheduled expiration.
-
-## 9.7 Generic rule-resolution primitive
-
-```text
-ResolutionContext
-    actor
-    action
-    targets
-    environment
-    active_effects
-    timing
-    ruleset_revision
-```
-
-```text
-ResolutionOutcome
-    status
-    rolls
-    modifiers_applied
-    resource_changes
-    effects
-    emitted_events
-    rule_trace_id
-```
-
-Rule traces are DM/developer-visible unless campaign policy exposes them. Baseline NPC controllers do not receive hidden rule traces as decision inputs.
+Mechanics use reusable typed definitions/effect pipelines rather than one-off imperative handlers where practical. Features, resources, health, abilities/spells/powers, conditions, modifiers, triggers, durations, stacking, and generic resolution contexts/outcomes are versioned and deterministic.
 
 ---
 
 # 10. Reactions and interrupts
 
-Reactions are interrupt windows, not a special side-channel.
-
-```text
-triggering event
-    -> eligible reactions calculated
-    -> ReactionWindowOpened
-    -> commands accepted under policy
-    -> reaction resolves
-    -> original resolution continues/cancels/changes
-```
-
-Timing policies map the reaction window differently for turn-based, timed-turn, active-time, and real-time modes.
-
-Multiple reactions are deterministically ordered.
-
-`SimpleNpcController` may automatically evaluate a reaction only from the reaction-window actions advertised as legal for its actor and its versioned reaction policy.
+Reactions are deterministic interrupt windows. Human and NPC controllers may only choose from eligible advertised reaction actions under their timing/visibility policies.
 
 ---
 
 # 11. Spatial authority and movement
 
-The server owns position/movement semantics but does not require one representation.
-
-```text
-SpatialAdapter
-```
-
-Implementations:
+The server owns movement/position semantics through replaceable spatial adapters:
 
 ```text
 TheaterOfMindSpace
@@ -972,173 +420,19 @@ Continuous2DSpace
 Continuous3DSpace
 ```
 
-Required operations include:
-
-```text
-distance(a, b)
-can_see(a, b)
-can_reach(a, b)
-path(a, b)
-cover(a, b)
-occupants(position)
-can_occupy(actor, position)
-terrain_cost(position)
-area_query(shape)
-```
-
-## 11.1 Movement is an action
-
-Clients and controllers never patch coordinates directly.
-
-```text
-MoveActor
-    actor_id
-    destination | path | direction
-    movement_mode
-    client_command_id
-```
-
-Movement modes:
-
-```text
-walk
-run
-crawl
-climb
-swim
-fly
-jump
-teleport
-forced
-vehicle
-custom
-```
-
-Turn/grid movement validates path, reactions, cost, and final state.
-
-Real-time movement produces an authoritative trajectory/path plus meaningful events; clients interpolate presentation locally. The domain does not emit one event per rendered frame.
-
-The baseline NPC controller uses legal movement intents/candidate locations from the authoritative spatial/action layer rather than implementing a second pathfinding/range legality system.
+Movement is an action; clients/controllers never patch coordinates. NPC controllers use authoritative movement intents/candidates rather than a second path/range rules engine.
 
 ---
 
 # 12. Perception, hidden state, discovery, terrain, and world objects
 
-A server-authoritative RPG must distinguish true world state from what an actor knows.
-
-## 12.1 Senses
-
-```text
-SenseDefinition
-    sense_type
-    range
-    precision
-    requirements
-    blockers
-```
-
-The spatial/perception layer answers:
-
-```text
-can_perceive(observer, subject)
-perception_quality(observer, subject)
-known_position(observer, subject)
-visible_fields(observer, entity)
-```
-
-## 12.2 Hidden information
-
-Clients and non-human controllers receive knowledge/visibility projections, never omniscient aggregates.
-
-Secret checks may be resolved server-side with visibility metadata hiding both existence and result where policy permits.
-
-An NPC may not target, flee from, support, or score an actor merely because the server knows that actor exists; the information must appear in the controlled actor's permitted decision view.
-
-## 12.3 Discovery
-
-```text
-EntityDetected
-EntityIdentified
-LocationDiscovered
-FactLearned
-MapKnowledgeUpdated
-```
-
-Discovery may be actor-, party-, or campaign-scoped.
-
-## 12.4 World objects
-
-```text
-WorldObject
-    id
-    definition_ref
-    scene_or_location_id
-    spatial_state
-    object_state
-    interaction_actions
-    visibility
-```
-
-Objects cover doors, switches, furniture, signs, containers, quest objects, resource nodes, environmental features, and other interactables.
-
-## 12.5 Containers
-
-```text
-ContainerState
-    inventory_id
-    access_policy
-    open_state
-    lock_state
-    capacity
-```
-
-## 12.6 Terrain and hazards
-
-```text
-TerrainDefinition
-    movement_costs
-    movement_mode_rules
-    visibility_modifiers
-    environmental_effects
-    tags
-```
-
-```text
-HazardDefinition
-    trigger
-    detection_rules
-    avoidance_rules
-    effects
-    reset_policy
-    visibility
-```
+True world state is separate from actor knowledge. Clients and controllers receive knowledge/visibility projections, never omniscient aggregates. Discovery is event-driven; world objects, containers, terrain, hazards, senses, lighting/visibility and secret checks remain server-authoritative.
 
 ---
 
 # 13. Actor model
 
 Players, NPCs, monsters, pets, companions, summons, and AI actors share a component-based actor foundation.
-
-```text
-Actor
-    Identity
-    Controller
-    Attributes
-    Resources
-    Movement
-    Perception
-    Inventory
-    Equipment
-    Features
-    Spellcasting
-    Conditions
-    Effects
-    Progression
-    FactionMembership
-    Reputation
-    Knowledge
-    Location
-```
 
 Initial controller types:
 
@@ -1150,46 +444,7 @@ remote_service
 system
 ```
 
-Later controller types may include:
-
-```text
-utility_ai
-behavior_tree
-external_agent
-llm
-```
-
-Definitions/templates are separate from instances.
-
-```text
-ActorTemplateDefinition
-    id
-    key
-    actor_kind
-    base_attributes
-    proficiencies
-    features
-    actions
-    resources
-    movement
-    senses
-    equipment
-    controller_defaults
-    source_metadata
-```
-
-```text
-ActorInstance
-    id
-    template_ref | null
-    campaign_id
-    current_components
-    controller
-    location
-    visibility
-```
-
-Controller assignment is versioned configuration:
+Later controller types may include utility AI, behavior trees, external agents, and LLM adapters.
 
 ```text
 ControllerAssignment
@@ -1200,1371 +455,152 @@ ControllerAssignment
     fallback_controller_type | null
 ```
 
+Definitions/templates remain separate from mutable actor instances.
+
 ---
 
 # 14. Character creation
 
-Character creation is a resumable server-authoritative workflow, not one giant mutable character payload.
+Character creation is a resumable server-authoritative draft/session workflow with ruleset-driven steps, dependency invalidation, ability-generation policies, species/background/classes/subclasses, proficiencies, equipment, feats/features, abilities, identity, higher-level starts, multiclassing, lifecycle, import/export, and validation/finalization.
 
-```text
-CharacterCreationSession
-    id
-    owner_user_id
-    campaign_id | null
-    ruleset_id
-    ruleset_version
-    content_lock_hash
-    target_starting_level
-    status
-    current_step
-    completed_steps
-    available_steps
-    selections
-    validation_errors
-    warnings
-    created_at
-    updated_at
-```
-
-Statuses:
-
-```text
-draft
-valid
-finalized
-cancelled
-expired
-```
-
-## 14.1 Ruleset-driven step graph
-
-A ruleset exposes the creation dependency graph rather than forcing one UI page order.
-
-Example:
-
-```text
-ChooseClass
-    -> DetermineOrigin
-       -> ChooseBackground
-       -> ChooseSpecies
-       -> ChooseLanguages
-    -> DetermineAbilityScores
-    -> ChooseClassOptions
-    -> ChooseProficiencies
-    -> ChooseEquipment
-    -> ChooseSpellsOrPowers
-    -> ChooseAlignment
-    -> CharacterDetails
-    -> Validate
-    -> Finalize
-```
-
-## 14.2 Commands
-
-```text
-BeginCharacterCreation
-ChooseClass
-ChooseSubclass
-ChooseSpecies
-ChooseBackground
-ChooseLanguage
-AssignAbilityScores
-ChooseSkillProficiency
-ChooseToolProficiency
-ChooseStartingEquipment
-ChooseFeat
-ChooseFeatureOption
-ChooseSpell
-SetAlignment
-SetCharacterIdentity
-SetCharacterAppearance
-SetCharacterBiography
-ValidateCharacterDraft
-FinalizeCharacter
-CancelCharacterCreation
-```
-
-Every choice emits auditable events.
-
-## 14.3 Draft dependency invalidation
-
-Changing an upstream choice revalidates downstream choices.
-
-```text
-DraftRevalidationResult
-    retained_choices
-    invalidated_choices
-    new_required_choices
-    warnings
-```
-
-Valid unrelated selections are retained; invalid selections are marked unresolved rather than silently discarded.
-
-## 14.4 Identity/presentation metadata
-
-```text
-CharacterIdentity
-    name
-    pronouns | null
-    alignment | null
-    age | null
-    size
-    appearance
-    biography
-    personality_notes
-    ideals
-    bonds
-    flaws
-    portrait_asset_id | null
-    tags
-```
-
-Rulesets decide which fields have mechanical meaning.
-
-## 14.5 Species
-
-```text
-SpeciesDefinition
-    id
-    ruleset_id
-    name
-    size_options
-    base_speed
-    traits
-    feature_grants
-    choice_groups
-    prerequisites
-    tags
-    source_metadata
-```
-
-Species grants feed normal feature/effect/movement/sense systems.
-
-## 14.6 Background/origin
-
-```text
-BackgroundDefinition
-    id
-    name
-    ability_score_options
-    feat_grants
-    skill_proficiencies
-    tool_proficiencies
-    equipment_options
-    feature_grants
-    tags
-    source_metadata
-```
-
-## 14.7 Ability scores and derived values
-
-```text
-AbilityState
-    base_score
-    permanent_adjustments
-    temporary_modifiers
-    effective_score
-    modifier
-```
-
-Derived values—proficiency, saves, skills, defense, initiative, speed, HP/resource maxima, and spellcasting values—are calculated projections, not independently mutable fields.
-
-Ability generation policies may include:
-
-```text
-fixed_array
-point_allocation
-deterministic_random_roll
-manual_dm_authorized
-imported
-custom
-```
-
-Random generation is server-side and auditable.
-
-## 14.8 Skills and proficiencies
-
-D&D-style skills are separate from videogame-style talent trees.
-
-```text
-SkillDefinition
-    id
-    name
-    governing_ability
-    ruleset_id
-    tags
-```
-
-```text
-ProficiencyState
-    proficiency_id
-    proficiency_type
-    rank
-    source_ids
-```
-
-Ranks may include none, half, proficient, expert, or custom.
-
-Knowledge is separately represented through facts, lore entries, discovered locations, identified creatures/items, and known languages.
-
-## 14.9 Classes/subclasses
-
-```text
-ClassDefinition
-    id
-    name
-    hit_point_progression
-    primary_abilities
-    saving_throw_proficiencies
-    proficiency_choices
-    starting_equipment_choices
-    progression_graph_id
-    spellcasting_model | null
-    resource_definitions
-    tags
-```
-
-```text
-SubclassDefinition
-    id
-    parent_class_id
-    name
-    prerequisites
-    progression_nodes
-    tags
-```
-
-## 14.10 Higher-level and multiclass creation
-
-Higher-level creation resolves choices in valid sequential advancement order. Multiclass characters use total level plus per-class levels.
-
-```text
-CharacterProgressionState
-    total_level
-    class_levels[]
-    progression_graph_states[]
-    pending_advancement_session_id | null
-```
-
-The result must be equivalent to legal sequential advancement under the pinned ruleset.
-
-## 14.11 Character lifecycle
-
-```text
-draft
-active
-inactive
-retired
-unavailable
-archived
-```
-
-Commands include activate, deactivate, retire, archive, restore, and ownership transfer. Defeat/revival-like gameplay states use rules/conditions rather than deleting history.
-
-## 14.12 Import/export/templates
-
-Templates are definitions. Imported characters enter a validation session and cannot inject server IDs, permissions, or event history. Exports contain snapshot, portable definition references, source provenance, and schema version.
+Derived values are projections rather than independently mutable fields.
 
 ---
 
 # 15. Progression and skill/talent trees
 
-The engine uses a generic directed progression graph rather than hard-coded `if level == ...` logic.
-
-```text
-ProgressionGraph
-    id
-    ruleset_id
-    name
-    node_ids
-    edge_ids
-    respec_policy
-```
-
-```text
-ProgressionNode
-    id
-    graph_id
-    node_type
-    name
-    rank_count
-    cost
-    prerequisites
-    exclusive_group | null
-    grants
-    effects
-    tags
-    ui_metadata
-```
-
-```text
-ProgressionEdge
-    from_node_id
-    to_node_id
-    requirement
-```
-
-Node types may include class/subclass features, feats, ability improvements, skill upgrades, spell unlocks, powers, passives, actions, reactions, resource upgrades, movement upgrades, and custom nodes.
-
-The graph supports:
-
-- linear class progression;
-- branching trees;
-- mutually exclusive paths;
-- ranked nodes;
-- level/ability/proficiency/node prerequisites;
-- quest/achievement prerequisites for custom rulesets;
-- progression currency;
-- respec policies;
-- temporary/campaign-granted nodes;
-- hidden nodes revealed by discovery.
-
-The SRD package maps conventional class progression conservatively onto this model; custom rulesets may expose WoW/Final-Fantasy-style trees.
-
-## 15.1 Advancement policies
-
-```text
-experience_points
-milestone
-session_based
-quest_based
-skill_use
-custom
-```
-
-```text
-AdvancementState
-    character_level
-    experience
-    advancement_points
-    pending_level_ups
-    progression_currency
-```
-
-A level-up is a transactional resumable advancement session until all choices validate.
+A generic versioned progression graph supports conventional class progression and richer custom branching trees with ranks, prerequisites, mutually-exclusive paths, grants, respec policies, hidden nodes, and multiple advancement policies.
 
 ---
 
 # 16. Campaign creation and configuration
 
-Campaign creation is also a resumable workflow.
+Campaign creation is a resumable workflow covering ruleset/template, timing, progression/rest, spatial model, world clock, visibility/logging, content packs, player rules, house rules, and baseline controller policies.
 
-```text
-CampaignCreationSession
-    id
-    owner_user_id
-    ruleset_id
-    ruleset_version
-    status
-    selected_template
-    options
-    validation_errors
-```
-
-Suggested flow:
-
-```text
-ChooseRuleset
-    -> ChooseCampaignTemplate
-    -> ConfigureGameModes
-    -> ConfigureTime
-    -> ConfigureProgression
-    -> ConfigureWorld
-    -> ConfigureSpatialModel
-    -> ConfigureContentPacks
-    -> ConfigurePlayerRules
-    -> ConfigureLogging
-    -> Validate
-    -> FinalizeCampaign
-```
-
-## 16.1 Campaign configuration
-
-```text
-CampaignConfig
-    ruleset_id
-    ruleset_version
-    combat_timing_mode
-    turn_deadline
-    reaction_deadline
-    timeout_policy
-    progression_policy
-    resting_policy
-    spatial_policy
-    world_clock_policy
-    difficulty_policy
-    death_policy
-    visibility_policy
-    dice_visibility
-    logging_policy
-    content_pack_ids
-    house_rule_ids
-```
-
-Campaign configuration changes are versioned for replay.
-
-Campaigns may also provide controller defaults for non-human actors, but actor/template `ControllerAssignment` remains explicit and versioned.
-
-## 16.2 Campaign templates
-
-Examples:
-
-```text
-classic_turn_based
-fast_timed_turns
-active_time_party_rpg
-real_time_action_rpg
-real_time_with_pause
-sandbox_world
-```
-
-Templates provide defaults but do not bypass normal validation.
+Configuration changes are versioned for replay.
 
 ---
 
 # 17. Membership, parties, sessions, adventures, scenes, and encounters
 
-## 17.1 Campaign membership/control
+Membership/control grants are server-authoritative. Parties, game sessions, optional adventures, scenes, and runtime encounter lifecycles are explicit domain objects. `EncounterTemplate` authoring is defined separately in the creator specification.
 
-```text
-CampaignMembership
-    campaign_id
-    user_id
-    role
-    controlled_actor_ids
-    permissions
-```
-
-Roles:
-
-```text
-owner
-dungeon_master
-player
-spectator
-service
-```
-
-Actor control is server-authoritative.
-
-## 17.2 Party/group
-
-```text
-Party
-    id
-    campaign_id
-    name
-    member_actor_ids
-    formation
-    marching_order
-    shared_resource_refs
-    leader_actor_id | null
-```
-
-NPC companions may belong to parties. Party membership is independent from user membership.
-
-## 17.3 Game session
-
-```text
-GameSession
-    id
-    campaign_id
-    status
-    opened_at
-    closed_at
-    world_time_at_open
-    participating_members
-    active_party_ids
-    notes
-```
-
-Statuses:
-
-```text
-scheduled
-open
-paused
-closed
-abandoned
-```
-
-Session boundaries support recap/analytics but do not necessarily pause world simulation.
-
-## 17.4 Adventure/episode
-
-Optional organizational grouping for quests, locations, and scenes; it is not a new rules authority.
-
-## 17.5 Scene
-
-```text
-Scene
-    id
-    location_id
-    scene_type
-    participant_actor_ids
-    object_ids
-    spatial_instance_id
-    visibility_state
-    status
-```
-
-Scene types include exploration, social, encounter, travel, downtime, and custom.
-
-## 17.6 Encounter
-
-```text
-Encounter
-    id
-    scene_id
-    encounter_type
-    timing_policy
-    status
-    participant_ids
-    side_or_faction_assignments
-    timeline_id
-    start_sequence
-    end_sequence | null
-```
-
-Statuses:
-
-```text
-pending
-positioning
-active
-paused
-resolving
-completed
-cancelled
-```
-
-Encounter lifecycle defines joins/leaves, positions, start, pause/resume, victory/end conditions, rewards, cleanup, reaction-window closure, movement reconciliation, and release of reserved actions/resources.
-
-When an encounter participant is assigned `simple_npc`, the scheduler/controller service requests a decision when that actor becomes eligible and submits the selected action through the same normal command path.
+When an encounter participant is assigned `simple_npc`, the scheduler/controller service requests a decision when that actor becomes eligible and submits the selected normal command.
 
 ---
 
 # 18. Living world, calendar, travel, weather, and environment
 
-The same scheduler drives combat and non-combat world time.
+The same scheduler drives combat and world time. World/region/location hierarchy, calendars, clock policies, travel, weather/environment, scheduled world events, and NPC schedules share the simulation timeline.
 
-```text
-World
-    id
-    campaign_id
-    name
-    calendar_id
-    current_time
-    regions
-    world_state
-    global_variables
-```
-
-Hierarchy:
-
-```text
-World
-    Region
-        Location
-            Area / Scene / Map
-                SpatialAdapter state
-```
-
-World creation may be authored, imported, procedural, AI-assisted through typed commands, or incrementally assembled.
-
-## 18.1 Calendar
-
-```text
-CalendarDefinition
-    units
-    eras
-    formatting
-```
-
-World time uses a canonical simulation timestamp plus calendar projection.
-
-## 18.2 World clock policies
-
-```text
-explicit_only
-while_session_open
-always_simulated
-scaled_real_time
-custom
-```
-
-## 18.3 Travel
-
-Travel is an action/process:
-
-```text
-origin
-destination
-route
-party
-pace
-estimated_simulation_duration
-encounter_event_hooks
-resource_effects
-```
-
-It can resolve as a summary or finer segments by campaign policy.
-
-Marching order/formation can determine encounter-start positions.
-
-## 18.4 Weather/environment
-
-Weather/environment state is versioned and scheduled. Rules/content decide whether it has mechanical effects.
-
-## 18.5 NPC schedules
-
-NPC activities, shop hours, travel, faction actions, and other world processes use scheduled events on the same simulation timeline.
-
-The initial autonomous controller integrates with schedule steps only for simple behaviors such as `idle`, `follow_actor`, `hold_position`, `move_to_assigned_location`, and `execute_schedule_step`; it does not invent unscripted long-term goals.
-
-Combat should ultimately be one high-intensity state of the same living world rather than an unrelated engine.
+Baseline NPC out-of-combat autonomy is limited to authored/simple states such as idle, follow, hold, move-to-location, and execute-schedule-step until advanced AI.
 
 ---
 
-# 19. Exploration, social interaction, and dialogue
+# 19. Exploration, social interaction, dialogue, and narration
 
-Generic exploration intents may include:
+Exploration/social intents are typed actions. Dialogue is a state machine whose choices produce typed commands/effects. The baseline NPC controller does not generate natural language.
 
-```text
-Move
-Travel
-Search
-Study
-Scout
-Interact
-Open
-Close
-Use
-Climb
-Jump
-Swim
-Rest
-Camp
-Forage
-Track
-Investigate
-Listen
-Observe
-```
+Authoritative events are facts; player-facing narration is a visibility-filtered projection. The deterministic narration-template renderer is the baseline. Optional later LLM narration may paraphrase visible facts but cannot invent authoritative state.
 
-Possible exploration events:
-
-```text
-LocationEntered
-LocationExited
-LocationDiscovered
-PathDiscovered
-FactLearned
-ObjectDiscovered
-TrapDetected
-ResourceFound
-EncounterTriggered
-WorldEventObserved
-```
-
-Social commands may include Talk, Influence, Trade, OfferItem, RequestItem, AskQuestion, Intimidate, Persuade, Deceive, Perform, and UseObject.
-
-Text does not directly mutate game state; consequences flow through typed rules/effects.
-
-## 19.1 Dialogue state machine
-
-```text
-DialogueDefinition
-    nodes
-    transitions
-    entry_conditions
-```
-
-```text
-DialogueNode
-    speaker
-    text_key_or_content_ref
-    choices
-    actions
-    requirements
-    visibility
-```
-
-Advanced AI may later propose dialogue text/intents, but consequences still resolve through normal commands.
-
-The initial `SimpleNpcController` does not generate natural language. Authored/scripted dialogue remains the default for NPC conversations.
+Detailed authoring/narration contracts: [`docs/authoring/CONTENT_AUTHORING.md`](docs/authoring/CONTENT_AUTHORING.md).
 
 ---
 
 # 20. Quests, factions, reputation, and relationships
 
-## 20.1 Quest objective graph
-
-```text
-QuestDefinition
-    id
-    name
-    prerequisites
-    objective_graph
-    rewards
-    failure_conditions
-    visibility
-```
-
-```text
-QuestObjectiveNode
-    id
-    predicate
-    prerequisites
-    completion_mode
-    failure_predicate
-    visibility
-```
-
-Support sequential, parallel, optional, mutually exclusive, hidden, timed, and repeatable objectives.
-
-Predicates may include visiting a location, acquiring an item, defeating/interacting with an actor, surviving until a time, discovering facts, reaching reputation, dialogue branches, and custom typed predicates.
-
-Quest state is projected from authoritative events.
-
-## 20.2 Factions and relationships
-
-```text
-Faction
-    id
-    relationships_to_factions
-    tags
-```
-
-```text
-RelationshipState
-    subject_ref
-    object_ref
-    metrics
-    discovered_traits
-    history_summary
-```
-
-Campaigns may use numeric or tiered relationship/reputation models.
+Quest objective graphs support sequential/parallel/optional/exclusive/hidden/timed/repeatable objectives. Faction/relationship state is event-driven and rules/content-defined. Static/simulation quality analysis should detect unreachable or structurally invalid content when possible.
 
 ---
 
 # 21. Inventory, equipment, economy, trade, rewards, and crafting
 
-## 21.1 Items
-
-```text
-ItemDefinition
-    id
-    name
-    item_type
-    weight
-    value
-    stack_policy
-    equip_slots
-    requirements
-    grants
-    actions
-    effects
-    tags
-```
-
-```text
-ItemInstance
-    id
-    definition_id
-    owner_or_container
-    quantity
-    durability | null
-    charges | null
-    custom_state
-```
-
-Commands include acquire, drop, transfer, equip, unequip, use, consume, split/merge stack, store, and retrieve.
-
-## 21.2 Inventories
-
-Inventories may belong to actors, parties, containers, vendors, vehicles, locations, or campaign services.
-
-```text
-Inventory
-    id
-    owner_ref
-    slots_or_capacity_policy
-    item_instances
-    currency_wallet_id | null
-```
-
-## 21.3 Currency
-
-```text
-CurrencyDefinition
-    id
-    key
-    precision
-    exchange_group | null
-```
-
-```text
-Wallet
-    balances
-```
-
-Currency changes are commands/events.
-
-## 21.4 Vendors/trade
-
-```text
-VendorState
-    inventory_id
-    pricing_policy
-    availability_schedule
-    relationship_modifiers
-```
-
-Trade validates and reserves both sides, then commits atomically.
-
-## 21.5 Rewards/loot
-
-```text
-RewardDefinition
-    currency
-    item_grants
-    progression_grants
-    reputation_changes
-    feature_grants
-    custom_effects
-```
-
-Random loot uses deterministic RNG and records resolved definition references.
-
-## 21.6 Crafting
-
-```text
-RecipeDefinition
-    inputs
-    tools_or_capabilities
-    prerequisites
-    duration
-    checks
-    outputs
-    failure_policy
-```
-
-Crafting progresses on simulation time; requests never block for game-time duration.
+Items/instances, inventories, currencies/wallets, vendors/trade, rewards/loot, and crafting are server-authoritative. Crafting progresses on simulation time. Content authoring and quality validation cover references/acquisition paths.
 
 ---
 
 # 22. Rest, recovery, cooldowns, and regeneration
 
-Rest is a first-class scheduled process.
-
-```text
-RestInstance
-    id
-    participants
-    rest_type
-    start_time
-    scheduled_end_time
-    interruption_policy
-    status
-```
-
-Rules determine recovery at start, during, or completion.
-
-Cooldowns and regeneration are scheduled state transitions. Real-time clients may see `ready_at`; turn-based clients may see remaining rounds/turns, both derived from the same scheduler.
+Rest is a first-class scheduled process; cooldowns/regeneration are timeline transitions with mode-appropriate projections.
 
 ---
 
 # 23. AI and Dungeon Master boundaries
 
-The detailed initial controller specification is [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md). That document is normative for baseline non-human actor behavior.
+Baseline NPC controller: [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md).
 
-## 23.1 Baseline `SimpleNpcController`
+`SimpleNpcController` is deterministic, shallow, visibility-safe, profile-driven, and subordinate to available-action/rules validation. Initial profiles cover aggressive melee, ranged, balanced/defensive, support, passive, and flee.
 
-The initial autonomous NPC/creature AI is deliberately small and deterministic.
+Advanced AI may later add utility/goals/memory/planners/external/LLM adapters while preserving the same visible-input -> typed-command -> authoritative-events boundary.
 
-```text
-visibility-filtered controller view
-    -> available legal actions
-    -> versioned behavior profile
-    -> deterministic one-step scoring
-    -> selected action/targets
-    -> normal typed command
-    -> normal rules/timing validation
-    -> events
-```
-
-It is not an LLM, external API, behavior tree, GOAP planner, or multi-turn tactical search engine.
-
-Conceptual input/output:
-
-```text
-NpcDecisionView
-    actor_id
-    controller_profile_ref
-    controller_version
-    visible_actor_state
-    visible_scene_state
-    visible_targets
-    available_actions
-    timing_state
-    current_schedule_step | null
-```
-
-```text
-NpcDecision
-    action_id
-    targets
-    parameters
-    score
-    reason_code
-```
-
-Initial behavior profiles:
-
-```text
-aggressive_melee
-ranged
-balanced
- defensive
-support
-passive
-flee
-```
-
-The controller evaluates one decision when the actor is eligible. It ranks only legal advertised actions and cannot bypass the rules engine.
-
-The initial algorithm prioritizes, in order, retreat behavior when configured/triggered, eligible support actions, legal offensive actions against visible hostiles, legal movement toward/away/from preferred range, configured defensive behavior, then a safe fallback.
-
-Tie-breaking is stable and deterministic by score/action/target identity. Controller decision randomness is unnecessary for the MVP.
-
-## 23.2 Baseline information and failure boundary
-
-The controller receives only information the actor may perceive/know. It does not receive hidden actors, undiscovered objects/traps, DM-only state, hidden dice results, secret rule traces, or unknowable future scheduled events.
-
-If controller evaluation fails, it does not mutate state. It uses a configured fallback such as stable-first-legal, defend, end/no-op, or forfeit. A controller failure cannot crash or corrupt the authoritative scheduler.
-
-Structured `NpcDecisionTrace` data may record candidate scores and the selected action for diagnostics, but the trace is non-authoritative.
-
-## 23.3 Advanced AI boundary
-
-Later systems may add richer utility AI, goals, memory, behavior trees, planners, external agents, or LLM adapters.
-
-They must preserve the same invariants:
-
-```text
-visible controller-safe input
-    -> controller decision/intent
-    -> typed command
-    -> normal rules validation
-    -> deterministic authoritative events
-```
-
-LLM text or external-model output never mutates game state directly.
-
-## 23.4 Dungeon Master authority
-
-DM powers are privileged commands, not arbitrary DB writes.
-
-Examples:
-
-```text
-CreateEncounter
-SpawnActor
-DespawnActor
-RevealLocation
-RevealKnowledge
-SetWeather
-ScheduleWorldEvent
-StartDialogue
-AdvanceQuest
-GrantItem
-ApplyEffect
-PauseTimeline
-ResumeTimeline
-OverrideRuleResolution
-```
-
-Overrides generate auditable events with principal/reason metadata.
+DM powers are privileged commands, not arbitrary DB writes. Live DM/session operational workflows are defined in [`docs/operations/DM_SESSION_OPERATIONS.md`](docs/operations/DM_SESSION_OPERATIONS.md).
 
 ---
 
-# 24. Logging and history
+# 24. Logging, history, recaps, and journals
 
-There are four separate logging concepts.
+Maintain four separate concepts: authoritative domain event log, player game/combat log projection, administrative audit log, and operational logs.
 
-## 24.1 Domain event log — authoritative
-
-Append-only source for replay, state reconstruction, branching, save/load, verification, and gameplay history.
-
-## 24.2 Player-facing game/combat log
-
-A projection of domain events for readable history, narration, accessibility, spectators, and combat-log UI.
-
-Verbosity levels may include:
-
-```text
-minimal
-normal
-detailed
-debug_rules
-```
-
-## 24.3 Administrative audit log
-
-Records DM overrides, permissions, content changes, campaign configuration, moderation/admin operations, and actor-control changes.
-
-Entries include principal, correlation/request IDs, reason, timestamp, and related events.
-
-## 24.4 Operational logs
-
-Structured infrastructure/application diagnostics. They are not game state and are not needed for replay.
-
-Common fields:
-
-```text
-request_id
-correlation_id
-campaign_id
-actor_id
-command_id
-event_id
-stream_id
-stream_version
-simulation_time
-controller_type
-controller_version
-behavior_profile_ref
-```
-
-## 24.5 Log/history query endpoints
-
-```text
-GET /api/v1/campaigns/{campaign_id}/events
-GET /api/v1/campaigns/{campaign_id}/game-log
-GET /api/v1/encounters/{encounter_id}/combat-log
-GET /api/v1/characters/{character_id}/history
-GET /api/v1/campaigns/{campaign_id}/audit-log
-```
-
-Filters include sequence/time ranges, type, actor, encounter, correlation ID, visibility, limit, and cursor.
+Session recaps, character journals, quest/discovery journals, campaign chronicles, NPC encounter history, and related views are visibility-filtered deterministic projections over authoritative history. Optional AI summaries may stylistically summarize those facts but are not authoritative.
 
 ---
 
-# 25. Replay, snapshots, branching, and schema evolution
+# 25. Replay, snapshots, checkpoints, branches, and schema evolution
 
-A campaign supports:
+The engine supports replay from start/snapshot, historical inspection, projection rebuilds, event upcasters, and versioned schemas.
 
-```text
-ReplayFromStart
-ReplayFromSnapshot
-InspectStateAtSequence
-InspectStateAtSimulationTime
-CreateBranchFromSequence
-CompareBranches
-```
+Named checkpoints are durable references to campaign sequence/time/snapshot information. The default restore workflow creates a campaign branch from a checkpoint/sequence rather than erasing later authoritative history.
 
-Branching UX can remain post-v1.0, but deterministic replay primitives must exist.
-
-## 25.1 Event schema versioning
-
-Each event has `event_type` and `schema_version`.
-
-Old events are read through deterministic upcasters:
-
-```text
-stored_v1 -> upcast_v2 -> upcast_v3 -> current_reader
-```
-
-Historical payloads are not silently rewritten simply because application code changed.
-
-## 25.2 Projection versioning
-
-```text
-projection_type
-schema_version
-last_event_sequence
-build_version
-```
-
-All projections have deterministic rebuild paths.
-
-## 25.3 Retention
-
-Retention policies are separate for authoritative events, audit logs, operational logs, WebSocket buffers, analytics, and optional diagnostic controller traces.
-
-Authoritative history required to restore an active campaign cannot be expired unless an archival/compaction format preserves replay semantics.
+Detailed checkpoint/branch/session lifecycle: [`docs/operations/DM_SESSION_OPERATIONS.md`](docs/operations/DM_SESSION_OPERATIONS.md).
 
 ---
 
 # 26. REST API contract
 
-Initial API domains converge toward:
+Initial public API domains cover rules/content, character/campaign creation, world/scene/party/session/actors/encounters/timeline/actions/commands/events/effects/items/abilities/features/quests/dialogues/factions/vendors/recipes.
 
-```text
-/api/v1/rulesets
-/api/v1/content-packs
-/api/v1/character-creation-sessions
-/api/v1/characters
-/api/v1/campaign-creation-sessions
-/api/v1/campaigns
-/api/v1/worlds
-/api/v1/regions
-/api/v1/locations
-/api/v1/scenes
-/api/v1/parties
-/api/v1/sessions
-/api/v1/actors
-/api/v1/encounters
-/api/v1/timelines
-/api/v1/actions
-/api/v1/commands
-/api/v1/events
-/api/v1/effects
-/api/v1/conditions
-/api/v1/items
-/api/v1/inventories
-/api/v1/abilities
-/api/v1/features
-/api/v1/quests
-/api/v1/dialogues
-/api/v1/factions
-/api/v1/vendors
-/api/v1/recipes
-```
+Creator/operations additions include authoring workspaces/drafts/validation/releases, encounter templates, lobbies/ready checks/control grants/checkpoints/branches/recaps/journals, content-revision diff/impact/dry-run, and quality/simulation job/report APIs.
 
-Prefer one typed command gateway to dozens of state-mutating endpoints.
+State-changing gameplay operations prefer typed commands. Authoring mutable drafts and operational job resources may use conventional resource APIs where they are not authoritative campaign gameplay state.
 
-Controller internals do not require a special rules-bypass endpoint. Server-side controllers call the same application command path, and external controllers must use authorized public/service APIs.
-
-## 26.1 Command envelope
-
-```text
-CommandEnvelope
-    command_id
-    command_type
-    schema_version
-    campaign_id
-    actor_id | null
-    expected_stream_version | null
-    idempotency_key
-    client_sequence | null
-    payload
-```
-
-Principal identity/roles are derived by the server, never trusted from payload fields.
-
-## 26.2 Command receipt
-
-```text
-CommandReceipt
-    command_id
-    status
-    accepted_at
-    resulting_event_ids
-    resulting_sequence_range | null
-    rejection | null
-```
-
-Statuses:
-
-```text
-accepted
-rejected
-already_processed
-conflict
-pending_external_resolution
-```
-
-Ordinary game commands should resolve synchronously to authoritative acceptance/rejection. Pending external resolution is reserved for explicitly external integrations.
-
-## 26.3 Error taxonomy
-
-Required machine-readable codes:
-
-```text
-invalid_schema
-unauthenticated
-forbidden
-not_found
-state_conflict
-idempotency_conflict
-invalid_choice
-prerequisite_failed
-resource_insufficient
-target_invalid
-out_of_range
-not_actor_ready
-deadline_expired
-action_not_available
-ruleset_incompatible
-content_dependency_error
-campaign_locked
-rate_limited
-internal_error
-service_unavailable
-controller_unavailable
-controller_error
-```
-
-Errors include stable code, human-readable message, correlation ID, and structured details; ordinary clients never receive stack traces or hidden decision information.
-
-## 26.4 Query/version contract
-
-Historical-capable queries accept `as_of_sequence` and responses carry:
-
-```text
-campaign_id
-projection_sequence
-projection_schema_version
-content_lock_hash
-payload
-```
-
-Unbounded collections use opaque cursor pagination.
-
-`/api/v1` versions the transport contract; payload schemas are independently versioned. Prefer additive changes; breaking changes require explicit version/deprecation handling.
+API errors are typed/versioned; queries carry projection/version metadata; unbounded collections use opaque cursors.
 
 ---
 
-# 27. Character and campaign projections
+# 27. Character, campaign, creator, and operational projections
 
-## 27.1 Character sheet
-
-```text
-CharacterSheet
-    identity
-    species
-    background
-    classes
-    level
-    abilities
-    saves
-    skills
-    proficiency_bonus
-    defenses
-    hit_points
-    resources
-    speeds
-    senses
-    languages
-    features
-    feats
-    progression
-    attacks
-    actions
-    reactions
-    inventory
-    equipment
-    spellcasting
-    conditions
-    effects
-```
-
-This is a read projection, never a mutable aggregate payload.
-
-## 27.2 Campaign dashboard
+Core projections include CharacterSheet and CampaignDashboard plus role-aware creator/session views such as:
 
 ```text
-CampaignDashboard
-    campaign_summary
-    world_time
-    active_session
-    party
-    active_encounters
-    current_location
-    quests
-    recent_game_log
-    visible_scheduled_world_events
-    connected_members
+CreatureEditorView
+EncounterEditorView
+QuestGraphEditorView
+DialogueGraphEditorView
+WorldGraphEditorView
+CampaignLobby
+SessionRecap
+CharacterJournal
+CampaignChronicle
+ContentQualityReport
+CompatibilityReport
+CampaignContentImpactReport
 ```
 
-Role/visibility policy controls fields.
-
-## 27.3 Dynamic UI metadata
-
-Definitions may include non-authoritative presentation hints:
-
-```text
-label
-description
-icon_key
-category
-sort_order
-ui_group
-recommended_control
-```
-
-Generic clients can use these to build character creators, progression trees, action bars, inventories, quest journals, and campaign setup interfaces.
+All remain derived/read models unless explicitly defined as mutable authoring/operations state.
 
 ---
 
 # 28. WebSocket live protocol
 
-Suggested connection:
+The live protocol provides authenticated subscriptions, ordered delivery, acknowledgement/resume, snapshot+delta resync, bounded backpressure, heartbeats, and server-side visibility filtering.
 
-```text
-/api/v1/ws/campaigns/{campaign_id}
-```
-
-Subscription channels may include:
-
-```text
-campaign.*
-world.*
-scene.*
-encounter.*
-actor.*
-timeline.*
-quest.*
-dialogue.*
-system.*
-```
-
-## 28.1 Handshake
-
-Client authenticates and supplies interests plus last acknowledged sequence.
-
-```text
-ConnectionReady
-    connection_id
-    campaign_sequence
-    heartbeat_interval
-    resync_required
-```
-
-## 28.2 Ordered delivery/resume
-
-Visible events carry monotonic ordering. If missed events remain buffered, replay from the last acknowledged sequence. Otherwise return `resync_required`.
-
-## 28.3 Snapshot + delta
-
-Reconnect flow:
-
-1. fetch current projection snapshot;
-2. record snapshot sequence;
-3. subscribe from `snapshot_sequence + 1`;
-4. apply deltas in order.
-
-## 28.4 Backpressure
-
-Outbound buffers are bounded.
-
-- coalesce replaceable projection notifications;
-- never silently drop authoritative events;
-- disconnect slow clients with a resumable reason if needed;
-- reconnect/resync must be deterministic.
-
-Heartbeats/presence are ephemeral unless a campaign rule explicitly makes connectivity part of gameplay.
-
-Events are filtered/redacted before enqueueing.
+Lobby/presence notifications can use live channels but ephemeral presence is not authoritative gameplay history unless campaign policy explicitly turns it into events.
 
 ---
 
-# 29. Persistence, concurrency, and transaction model
+# 29. Persistence, concurrency, authoring storage, and transaction model
 
-Recommended initial persistence stack:
+Recommended authoritative persistence stack:
 
 ```text
 PostgreSQL
@@ -2573,422 +609,83 @@ asyncpg
 Alembic
 ```
 
-Potential tables/projections:
+Gameplay authority uses event streams/receipts/snapshots/projections/outbox with optimistic concurrency/idempotency.
 
-```text
-campaigns
-campaign_config_revisions
-campaign_content_locks
-ruleset_installations
-content_pack_installations
-event_streams
-domain_events
-snapshots
-projection_versions
-command_receipts
-transactional_outbox
-actors
-encounters
-timelines
-sessions
-```
+Mutable authoring drafts may use conventional revisioned persistence; do not event-source every editor keystroke. Published definitions are immutable/versioned.
 
-Controller assignments/profile references live in actor/template/config state rather than a separate authoritative AI database.
+Simulation jobs/results are operational/isolated data and never mutate live production campaign streams.
 
-## 29.1 Atomic command commit
-
-Where feasible, one transaction commits:
-
-```text
-command receipt
-new domain events
-stream version update
-transactional outbox
-critical read-your-writes projections
-```
-
-WebSocket publication happens after durable commit via outbox/event publishing.
-
-## 29.2 Async/non-blocking requirements
-
-All request-path DB/network I/O is async-safe. Never use ordinary blocking locks or blocking clients on the event loop.
-
-CPU-heavy pathfinding, imports/exports, large replays, and simulation batches run through bounded worker execution or job infrastructure rather than blocking async request handling.
-
-Baseline NPC controller decisions must remain bounded/event-driven. Do not add a busy polling loop or blocking think delay.
-
-## 29.3 Concurrency
-
-Use optimistic stream versions and/or campaign-level serialization where rules require it. Commands carry idempotency keys so retries cannot duplicate actions.
-
-AI-controlled commands obey the same concurrency/version rules as human commands.
-
-## 29.4 Migration domains
-
-Keep separate:
-
-- database schema migrations;
-- event upcasters;
-- projection migrations/rebuilds;
-- content-pack/campaign state migrations;
-- controller/profile schema/version migrations.
-
-## 29.5 Integrity
-
-Enforce event sequence uniqueness and optional chained/hash checkpoints. Canonical state hashes support verification/testing.
-
-Redis may later support ephemeral coordination/pub-sub/cache but should not be the sole authoritative state store.
+Keep database migrations, event upcasters, projection migrations/rebuilds, content migrations, controller/profile migrations, and trusted-extension compatibility/migrations distinct.
 
 ---
 
 # 30. Authentication, authorization, security, and abuse controls
 
-```text
-Principal
-    user | service
-    authenticated_identity
-    campaign_memberships
-    actor_control_grants
-```
+Authorization evaluates role plus resource scope. DM is a permission bundle, not a DB bypass. Authoring/publishing, session operations, checkpoints/branches, simulation jobs, content activation, and trusted extension administration use explicit permissions.
 
-Permission examples:
-
-```text
-campaign.read
-campaign.configure
-campaign.admin
-actor.read
-actor.control
-scene.admin
-content.install
-audit.read
-spectate
-```
-
-DM is a permission bundle, not a magic database bypass.
-
-Internal `simple_npc` control uses explicit actor controller assignment and the normal command authorization path; it is not an implicit superuser.
-
-Apply configurable rate limits to authentication, command submission, expensive queries, exports, and subscriptions while preserving idempotent retry behavior.
-
-Imported content, biographies, dialogue, asset metadata, third-party pack text, and controller profiles are untrusted input. Validate schemas, sizes, references, and markup. Never execute pack/profile text as server code.
-
-Secrets/API keys/tokens must never appear in campaign events, game logs, exports, controller decision traces, or client-visible error details.
+Imported content and authored text are untrusted input. Ordinary content packs cannot execute arbitrary code. Secrets/tokens never appear in gameplay events/logs/exports/controller traces/simulation artifacts.
 
 ---
 
 # 31. Assets, localization, accessibility, and units
 
-## 31.1 Asset references
-
-```text
-AssetRef
-    id
-    media_type
-    uri_or_storage_key
-    content_hash
-    license_metadata
-    variants
-```
-
-Assets may represent portraits, map backgrounds, icons, audio references, handouts, and scene art. Rules should not depend on a client-engine-specific object.
-
-## 31.2 Localization
-
-```text
-LocalizedTextRef
-    key
-    fallback
-```
-
-Rules identifiers remain locale-independent.
-
-## 31.3 Units
-
-Store canonical internal units per ruleset/spatial adapter and expose conversion/display metadata. Do not mix display units with authoritative state.
-
-## 31.4 Accessibility metadata
-
-Definitions may carry semantic descriptions/non-visual labels so keyboard, screen-reader, terminal, and text clients can present the same rules correctly.
+Asset refs, localized text refs, canonical units/conversion metadata, and accessibility-oriented semantic descriptions remain client-independent. Authoring/published content validates asset/license references.
 
 ---
 
-# 32. Import/export and portable packages
+# 32. Import/export, portable packages, and content authoring
 
-## 32.1 Character export
+Character/campaign exports retain version/content provenance without auth/control grants. Content pack archives include manifest, definitions, migrations, localization resources, declared assets, and hashes.
 
-Contains:
+Imports always stage/validate before activation.
 
-```text
-format_version
-character_snapshot
-content_refs
-source_metadata
-required_pack_refs
-optional_presentation_metadata
-```
-
-No auth/session/control-grant data.
-
-## 32.2 Campaign export
-
-Modes:
+The authoring lifecycle is:
 
 ```text
-snapshot_export
-full_replay_export
+workspace/draft
+    -> layered validation
+    -> preview/runtime dry run
+    -> playtest/simulation evidence
+    -> publish-ready
+    -> immutable versioned content-pack release
+    -> optional install/activation into campaign lock
 ```
 
-Full replay includes event streams, snapshots/checkpoints, pinned content locks, configuration revisions, controller/profile references required to interpret active actor assignments, and locally owned content definitions where licensing permits.
-
-## 32.3 Content-pack archive
-
-Includes manifest, definitions, migrations, localization resources, declared assets, and versioned behavior-profile data when present. Installation validates hashes, schemas, licensing metadata, dependencies, and namespaces.
-
-## 32.4 Import staging
-
-Imports always enter staging/validation before explicit activation. They never mutate a live campaign on upload alone.
+Detailed authoring contracts: [`docs/authoring/CONTENT_AUTHORING.md`](docs/authoring/CONTENT_AUTHORING.md).
 
 ---
 
 # 33. Reliability, backup, restore, and crash recovery
 
-Back up at minimum:
+Backups include authoritative DB data, pinned content/extension metadata, required campaign assets, and migration metadata. Automated restore tests verify event/projection integrity.
 
-- PostgreSQL authoritative data;
-- content-pack storage;
-- campaign-local assets needed for restoration;
-- migration metadata;
-- controller/profile definitions referenced by active campaign state;
-- deployment encryption/key references where appropriate.
+Restart recovery restores timeline/deadlines/controller eligibility/outbox/projection state without duplicate actions.
 
-A backup is only considered valid after an automated restore can reconstruct campaigns and verify event/projection integrity.
-
-Deployments document their own RPO/RTO targets.
-
-On restart:
-
-1. load durable scheduler/timeline state;
-2. rebuild/verify pending scheduled events;
-3. restore or expire decision windows using reconnect policy;
-4. restore controller assignments and eligibility state;
-5. resume transactional outbox publication;
-6. verify projection lag;
-7. pass readiness checks before accepting traffic.
-
-Wall-clock deadlines store enough durable data for restart recovery.
-
-Controller decisions that were not durably committed before a crash may be recomputed from the restored visible state/profile/version; idempotency/concurrency rules prevent duplicate authoritative actions.
+Content upgrades create recovery checkpoints/branches as required; restore/migration semantics preserve historical content interpretation.
 
 ---
 
-# 34. Observability and analytics
+# 34. Observability, simulation, and analytics
 
-Metrics should include:
+Operational metrics cover command/event/projection/scheduler/WebSocket/controller behavior plus authoring validation, simulation throughput, migration failures, and quality-regression signals.
 
-```text
-commands_per_second
-command_acceptance_latency
-command_rejection_by_code
-event_append_latency
-events_per_second
-projection_lag
-scheduler_lag
-ready_actor_count
-action_window_expirations
-controller_decisions_per_second
-controller_decision_latency
-controller_fallback_count
-controller_error_count
-websocket_connections
-websocket_delivery_lag
-websocket_resync_count
-outbox_backlog
-db_pool_saturation
-replay_events_per_second
-content_validation_failures
-snapshot_duration
-```
+Analytics and simulation consume/drive separate pipelines and are never prerequisites for authoritative command processing.
 
-Tracing propagates request/correlation/command IDs through rules resolution, controller decision/submission when relevant, persistence, outbox publication, and WebSocket delivery.
-
-Analytics consume a separate event pipeline and are never required for authoritative command processing.
+The Simulation/Quality Lab is defined in [`docs/testing/SIMULATION_QUALITY_LAB.md`](docs/testing/SIMULATION_QUALITY_LAB.md).
 
 ---
 
 # 35. Testing strategy
 
-The complete programmatic human-play testing architecture is defined in [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md). That specification is normative for all user-visible gameplay and public-client behavior described by this plan.
+Normative test specifications:
 
-The baseline NPC AI/controller architecture is defined in [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md). Controller tests must preserve the same determinism, visibility, command-path, and replay invariants.
+- [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md)
+- [`docs/testing/SIMULATION_QUALITY_LAB.md`](docs/testing/SIMULATION_QUALITY_LAB.md)
+- [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md)
 
-Testing uses two complementary levels:
+Testing includes unit/domain/controller tests, rules conformance, deterministic replay, creation workflows, timing/action matrices, visibility/security, content compatibility, migration fixtures, persistence failures, API/live contracts, property/model-based tests, public-interface human-play scenarios, generated action walkers, simulation batches, static/reachability analysis, and performance benchmarks.
 
-```text
-white-box
-    unit/component/domain/controller tests
-    prove local invariants cheaply
-
-black-box human-play
-    authenticated personas using public REST/WebSocket contracts
-    prove the game is actually playable end to end
-```
-
-A gameplay feature is not fully complete merely because its internal tests pass. When the feature is public/player-visible, a programmatic human-play scenario must be able to discover and exercise it through the same interfaces available to a real client.
-
-When a scenario is intended to prove autonomous non-human behavior, NPC actors should be driven by their assigned controller rather than the test harness manually issuing every enemy action.
-
-## 35.1 Unit tests
-
-Pure deterministic domain behavior without HTTP/DB dependencies, plus pure controller-scoring/profile tests once `SimpleNpcController` exists.
-
-## 35.2 Rules conformance
-
-Maintain a feature matrix mapping every implemented SRD rules/content category to tests, source provenance, representative human-play scenarios once the category becomes playable, and relevant NPC controller profiles for creature actions where appropriate.
-
-## 35.3 Determinism/replay
-
-Run identical command streams twice and compare canonical events/state hashes. Rebuild state from events and compare against live projections.
-
-Human-play failures retain deterministic seed bundles and enough event/projection metadata to reproduce the exact session.
-
-Controller tests assert the same controller version/profile + the same visible decision view produces the same selected command. AI-vs-AI smoke encounters should also be replayable to the same canonical state.
-
-## 35.4 Creation workflows
-
-Test valid/invalid character and campaign paths, upstream-choice invalidation, higher-level starts, multiclass prerequisites, draft resume/expiry, campaign restrictions, and full public-client creation journeys.
-
-## 35.5 Timing/action matrix
-
-Representative actions run under every supported mode:
-
-```text
-turn_based
-timed_turn_based
-active_time
-real_time_with_pause
-real_time
-hybrid
-```
-
-Test interruption, timeout, reconnect, simultaneity, stale commands, idempotent retries, and controller-triggered actions/reactions.
-
-Timed tests use injected controllable clocks rather than long real sleeps. Exact deadline boundaries must be testable deterministically.
-
-## 35.6 Visibility tests
-
-Golden tests ensure player, party, spectator, DM, service, and controller decision projections never leak unauthorized fields.
-
-Black-box playtests run relevant scenarios under multiple personas so visibility is proven at the serialization/live-delivery boundary, not only inside domain helpers.
-
-Controller tests explicitly prove hidden/unperceived actors and secret DM state cannot affect `SimpleNpcController` decisions.
-
-## 35.7 Content compatibility
-
-Test install, dependencies, conflicts, upgrade, rollback, migration, and content-lock replay, including behavior-profile references when content packs provide them.
-
-## 35.8 Replay/migration fixtures
-
-Retain historical golden event streams from older schema versions and prove current code can upcast/replay them.
-
-Controller/profile schema fixtures must also remain version-testable when controller behavior configuration evolves.
-
-## 35.9 Persistence failure tests
-
-Inject transaction failure, outbox delay, duplicate delivery, projection rebuild, process restart during decision windows/controller eligibility, and DB reconnect scenarios.
-
-## 35.10 API/live contract tests
-
-Validate OpenAPI schemas, examples, error codes, auth, pagination, idempotency, WebSocket resume, snapshot+delta, and backpressure behavior.
-
-The same public contracts power the programmatic human-play harness.
-
-## 35.11 Property-based and model-based testing
-
-Use Hypothesis for dice bounds, resource accounting, stream versions, scheduler ordering, effect expiration, progression prerequisites, inventory conservation, command idempotency, WebSocket acknowledgement/resume state, controller profile/scoring invariants, and general invariant checking.
-
-As capability discovery matures, add generated **available-action walkers** that query legal actions from the server and choose among them using an independent deterministic scenario RNG. These walkers must not become a second rules engine.
-
-## 35.12 Human-play scenario harness
-
-The harness must support:
-
-- typed/versioned scenarios;
-- player, DM, spectator, slow-player, and reconnecting personas;
-- autonomous NPC actors using `SimpleNpcController` where appropriate;
-- independent authoritative-game, optional controller-variation, and human-behavior seeds;
-- public async REST clients;
-- public WebSocket clients;
-- deterministic think-time/timeout behaviors;
-- controllable simulation and wall clocks in test environments;
-- scenario transcripts;
-- feature/milestone/controller-profile coverage tags;
-- failure replay bundles;
-- multi-client concurrency;
-- reconnect/resync and backpressure scenarios;
-- chaos controls for recoverable infrastructure failures.
-
-The playtest client may understand API schemas and advertised available actions. It must not know hidden combat formulas, secret world state, authoritative dice results, or eligibility rules that a real generic client would not know.
-
-The NPC controller likewise may rank advertised legal actions but must not duplicate hidden rules or inspect omniscient state.
-
-## 35.13 Reference playable world
-
-The small **Testing Grounds** campaign is the canonical integration/playtest fixture and grows with milestones.
-
-```text
-Testing Grounds
-├── Town
-│   ├── Tavern
-│   ├── Merchant
-│   ├── Blacksmith
-│   └── Gate
-└── Forest
-    ├── Road
-    ├── Hidden Path
-    ├── Goblin Camp
-    └── Ruins
-```
-
-It should eventually exercise character creation, membership, movement, perception/discovery, dialogue, quests, inventory, trade, crafting, factions, world events, each timing mode, effects/reactions, progression, reconnect, logging, deterministic replay, and autonomous non-human actors.
-
-From v0.3 onward, at least one canonical encounter should pit a human-play persona against `SimpleNpcController` opponents without manually scripting each enemy turn.
-
-Maintain at least one long-form journey that feels like an actual campaign session instead of only disconnected subsystem tests.
-
-## 35.14 Coverage manifest
-
-Maintain a machine-readable mapping from each implemented gameplay feature to its unit, integration, and human-play coverage, including relevant timing modes, roles/personas, controller/profile variants, spatial adapters, negative cases, and replay cases.
-
-No milestone may be declared complete while a required implemented user-visible feature has no public-interface play path unless it is explicitly internal-only.
-
-## 35.15 Bug regression rule
-
-Every player-visible bug fix should add the narrowest durable regression. If a human could observe the bug during normal play, add or extend a human-play scenario unless an existing scenario already catches the failure.
-
-If the bug affects NPC autonomy, preserve a deterministic controller/profile regression fixture reproducing the decision.
-
-## 35.16 Performance
-
-Before v1.0 establish measurable p50/p95/p99 command latency, append throughput, replay throughput, WebSocket fanout, active-campaign capacity, projection-lag, controller-decision, and playtest-suite profiles. The benchmark harness is mandatory even if deployment targets differ.
-
-## 35.17 Baseline NPC AI scenario matrix
-
-Before the `SimpleNpcController` combat MVP is considered complete, prove at minimum:
-
-```text
-aggressive melee NPC approaches and attacks a visible hostile
-ranged NPC maintains preferred range when a legal option exists
-low-health NPC retreats under its configured threshold
-support NPC selects a legal support action for an eligible visible ally
-passive NPC does not initiate hostile action
-reaction policy selects/declines only advertised legal reactions
-hidden/unperceived actor cannot affect target selection
-same visible state/profile/version produces the same command
-rules rejection triggers safe fallback/no corruption
-human player can complete an encounter against AI-controlled opponents
-AI-vs-AI deterministic smoke encounter replays to the same canonical state
-```
+`Testing Grounds` is the canonical continuous integration/playtest campaign and grows to cover campaign/lobby/session, character creation, town/social/quests, trade/crafting, travel/discovery, autonomous NPC encounters, rewards/progression, reconnect, checkpoint/branch, session close/recap, and replay.
 
 ---
 
@@ -3009,21 +706,7 @@ httpx with ASGI transport
 WebSockets
 ```
 
-The baseline `SimpleNpcController` must not require an ML/LLM framework or external AI dependency.
-
-Potential later additions:
-
-```text
-Redis          ephemeral coordination/pub-sub/cache only
-OpenTelemetry  traces/metrics
-Prometheus     metrics
-structlog      structured logging
-orjson         serialization where evidence supports it
-```
-
-Advanced AI phases may add optional external/ML dependencies behind controller interfaces only when justified.
-
-Dependency additions should be evidence-driven.
+Baseline NPC AI requires no ML/LLM dependency. Later optional infrastructure may include Redis for ephemeral coordination/cache, OpenTelemetry, Prometheus, structlog, and evidence-driven performance libraries.
 
 ---
 
@@ -3031,51 +714,17 @@ Dependency additions should be evidence-driven.
 
 ```text
 rpg-engine-api/
-├── src/
-│   └── rpg_engine_api/
-│       ├── api/
-│       │   ├── rest/
-│       │   └── websocket/
-│       ├── application/
-│       │   ├── commands/
-│       │   ├── queries/
-│       │   └── services/
-│       ├── domain/
-│       │   ├── actors/
-│       │   ├── characters/
-│       │   ├── campaigns/
-│       │   ├── parties/
-│       │   ├── sessions/
-│       │   ├── scenes/
-│       │   ├── encounters/
-│       │   ├── timeline/
-│       │   ├── actions/
-│       │   ├── effects/
-│       │   ├── spatial/
-│       │   ├── perception/
-│       │   ├── inventory/
-│       │   ├── progression/
-│       │   ├── quests/
-│       │   ├── dialogue/
-│       │   ├── economy/
-│       │   ├── world/
-│       │   └── events/
-│       ├── controllers/
-│       │   ├── interfaces/
-│       │   ├── simple_npc/
-│       │   └── registry/
-│       ├── rules/
-│       │   ├── runtime/
-│       │   ├── interfaces/
-│       │   └── registry/
-│       ├── rulesets/
-│       │   └── srd_5_2_1/
-│       ├── persistence/
-│       │   ├── event_store/
-│       │   ├── repositories/
-│       │   ├── projections/
-│       │   └── outbox/
-│       └── infrastructure/
+├── src/rpg_engine_api/
+│   ├── api/
+│   ├── application/
+│   ├── domain/
+│   ├── controllers/
+│   ├── rules/
+│   ├── rulesets/
+│   ├── authoring/
+│   ├── simulation/
+│   ├── persistence/
+│   └── infrastructure/
 ├── tests/
 │   ├── unit/
 │   ├── integration/
@@ -3087,30 +736,25 @@ rpg-engine-api/
 │   ├── migration/
 │   ├── simulation/
 │   └── playtest/
-│       ├── harness/
-│       ├── scenarios/
-│       ├── fixtures/
-│       └── manifests/
 ├── examples/
-│   ├── terminal_client/
-│   ├── websocket_client/
-│   └── sample_campaign/
 ├── docs/
 │   ├── architecture/
 │   ├── api/
 │   ├── rules/
-│   ├── ai/
-│   │   └── SIMPLE_NPC_AI.md
-│   ├── testing/
-│   │   └── HUMAN_PLAYTESTING.md
+│   ├── ai/SIMPLE_NPC_AI.md
+│   ├── authoring/CONTENT_AUTHORING.md
+│   ├── operations/DM_SESSION_OPERATIONS.md
+│   ├── extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md
+│   ├── testing/HUMAN_PLAYTESTING.md
+│   ├── testing/SIMULATION_QUALITY_LAB.md
 │   └── decisions/
 ├── migrations/
 ├── PLAN.md
-├── README.md
+├── AGENTS.md
 └── pyproject.toml
 ```
 
-`PLAN.md` is the single authoritative roadmap. `docs/testing/HUMAN_PLAYTESTING.md` and `docs/ai/SIMPLE_NPC_AI.md` are detailed normative implementation specifications for testing and baseline NPC AI respectively; they are not competing roadmaps. Future architectural changes should update this file and, when the decision is non-trivial or irreversible, add an ADR under `docs/decisions/`.
+`PLAN.md` is the canonical roadmap. Detailed specifications above are normative elaborations of this plan rather than competing roadmaps.
 
 ---
 
@@ -3120,1055 +764,370 @@ rpg-engine-api/
 
 ### Goal
 
-Create the smallest authoritative engine capable of accepting typed commands and producing reproducible versioned events, with the first black-box human-play harness capable of proving the public command/replay path and a versioned controller-assignment seam ready for non-human actors.
+Create the smallest authoritative engine capable of typed commands -> reproducible versioned events, while establishing the seams that later gameplay, authoring, controllers, testing, simulation, and extensions depend on.
 
 ### Deliverables
 
-- [ ] Python 3.12+ project scaffold.
-- [ ] FastAPI application factory.
-- [ ] Pydantic v2 command/event schemas.
-- [ ] stable IDs, namespaced keys, `DefinitionRef`.
-- [ ] common `RequirementExpr`, `ChoiceGroup`, `Grant`, visibility, and source metadata.
-- [ ] `ControllerAssignment` primitive with `human`, `simple_npc`, `scripted`, and `system` types.
-- [ ] controller interface/registry seam without advanced AI implementation.
-- [ ] campaign aggregate.
-- [ ] actor aggregate foundation.
-- [ ] command bus.
-- [ ] command envelope/receipt and error taxonomy.
-- [ ] deterministic RNG/dice service.
-- [ ] independent named RNG streams and playtest scenario-behavior seed support.
-- [ ] append-only in-memory event store for tests.
-- [ ] PostgreSQL async event store.
-- [ ] stream versioning.
-- [ ] command idempotency.
-- [ ] event schema versions/upcaster interface.
-- [ ] snapshots interface.
-- [ ] projection version model.
-- [ ] transactional outbox interface.
-- [ ] canonical state hashing.
-- [ ] deterministic replay/golden fixtures.
-- [ ] health/readiness endpoints.
-- [ ] `tests/playtest` harness skeleton.
-- [ ] typed/versioned playtest scenario and step model.
-- [ ] minimal player/DM persona model.
-- [ ] public async REST playtest client once the command API exists.
-- [ ] WebSocket playtest client seam once the live endpoint exists.
-- [ ] controllable test-clock interfaces.
-- [ ] scenario transcript/failure artifact capture.
-- [ ] machine-readable feature coverage manifest format including controller/profile variants.
-- [ ] `Testing Grounds` fixture skeleton.
-- [ ] v0.1 black-box smoke scenario: create minimal campaign/actor -> public command -> event/projection -> replay -> identical canonical hash.
-- [ ] public-interface idempotent-retry and stale-version conflict scenarios.
+- Python 3.12+ scaffold and FastAPI factory;
+- Pydantic command/event/shared schemas;
+- stable IDs/namespaced keys/`DefinitionRef`;
+- `RequirementExpr`, `ChoiceGroup`, `Grant`, visibility, source metadata;
+- `ControllerAssignment` and controller registry seam;
+- definition-schema registry and immutable published-definition identity/version seam;
+- trusted-extension/version metadata seam and data-only ordinary content invariant;
+- campaign/actor aggregate foundations;
+- command bus/envelope/receipts/errors;
+- deterministic RNG streams/dice;
+- in-memory and PostgreSQL async event stores;
+- stream versions/idempotency/upcaster/snapshot/projection/outbox seams;
+- canonical state hashing/replay fixtures;
+- health/readiness endpoints;
+- playtest harness skeleton, seed/transcript/artifact/coverage schemas;
+- ContentQualityReport/CompatibilityReport schema seams;
+- Testing Grounds fixture skeleton;
+- black-box minimal command/replay/idempotency/conflict scenarios.
 
 ### Exit criteria
 
-Same initial state + content lock + RNG seed + command stream produces byte-equivalent canonical results, older fixture events can enter the current reader through version seams, a black-box programmatic persona can create the minimal supported game state, perform a legal public action, observe the authoritative result, and verify replay without calling domain internals, and an actor can carry a versioned controller assignment without coupling the domain to a specific AI implementation.
+The minimal public command path is deterministic/replayable; an actor can carry a versioned controller assignment; published definitions and trusted-extension metadata have stable version seams; the playtest/quality artifact foundations exist without later architecture rewrites.
 
 ---
 
 ## v0.2 — First-Class Time + Universal Actions
 
-### Goal
+Add the full scheduler/timing modes, universal action lifecycle, deadlines/timeouts, controller eligibility hooks, movement/rest/cooldown foundations, exact controllable-clock playtests, and disconnect/control-handoff timing seams.
 
-Make one scheduler authoritative for combat/world events and one action transaction model usable by every timing mode, including event-driven controller eligibility hooks.
-
-### Deliverables
-
-- [ ] `SimulationClock` and timeline aggregate.
-- [ ] scheduled-event priority queue abstraction.
-- [ ] deterministic tie-breaking.
-- [ ] pause/resume and game-time advancement.
-- [ ] delayed/periodic/cancelled/rescheduled events.
-- [ ] actor readiness state.
-- [ ] turn/round policy interface.
-- [ ] `turn_based`.
-- [ ] `timed_turn_based`.
-- [ ] `active_time`.
-- [ ] `real_time_with_pause`.
-- [ ] `real_time`.
-- [ ] `hybrid` policy composition.
-- [ ] durable wall-clock action/reaction deadlines.
-- [ ] timeout policies including `forfeit_turn`.
-- [ ] readiness/cooldown/cast-time scheduling.
-- [ ] generic `ActionDefinition` and `ActionInstance`.
-- [ ] cost reservation/payment/refund semantics.
-- [ ] interruption semantics.
-- [ ] available-action discovery foundation.
-- [ ] movement action foundation.
-- [ ] deterministic simultaneous-command ordering.
-- [ ] rest/cooldown/regeneration process foundation.
-- [ ] controller decision eligibility events/hooks for ready actors/reaction windows without busy polling.
-- [ ] human think-time behavior profiles.
-- [ ] exact deadline-boundary tests using controllable wall clocks.
-- [ ] black-box timeout/forfeit scenario.
-- [ ] black-box action reservation/refund scenario.
-- [ ] multi-persona simultaneous-action scenario.
-- [ ] reconnect-during-decision-window scenario.
-
-### Exit criteria
-
-One sample action/encounter runs under every supported timing mode without replacing the underlying runtime, with deterministic timeout/reconnect behavior proven through public-interface playtests without real sleeps, and the scheduler can request a controller decision when a non-human actor becomes eligible without granting the controller rules authority.
+Exit when one representative action works deterministically under every timing mode and controller eligibility/timeout/reconnect paths require no blocking sleeps or polling.
 
 ---
 
-## v0.3 — SRD Combat Runtime + Encounter Lifecycle + Simple NPC Combat AI
+## v0.3 — SRD Combat Runtime + Encounter Authoring + Simple NPC Combat AI
 
-### Goal
+Add SRD combat foundations, encounter runtime lifecycle, `EncounterTemplate` authoring schema, participant groups/waves/objectives/rewards/scaling foundation, `SimpleNpcController` combat MVP, behavior profiles/reactions/fallbacks, encounter smoke simulation, human-vs-NPC playtest, and deterministic AI-vs-AI simulation.
 
-Implement licensed combat foundations through the SRD 5.2.1 rules package and make non-human encounter participants capable of deterministic autonomous combat through `SimpleNpcController`.
-
-### Deliverables
-
-- [ ] ruleset manifest/registry and SRD attribution.
-- [ ] generic resolution context/outcome primitive.
-- [ ] abilities/checks/saves.
-- [ ] initiative.
-- [ ] turn/action resources.
-- [ ] attacks, damage, healing.
-- [ ] advantage/disadvantage-style modifier framework where licensed.
-- [ ] critical-result framework where licensed.
-- [ ] health/recovery projection.
-- [ ] conditions.
-- [ ] reactions/interrupts.
-- [ ] Ready-style triggered actions where licensed.
-- [ ] encounter state machine and participant join/leave.
-- [ ] encounter cleanup/reward hook.
-- [ ] server-authoritative combat movement.
-- [ ] legal target discovery.
-- [ ] combat-log projection.
-- [ ] encounter history queries.
-- [ ] rule-trace debugging.
-- [ ] conformance tests.
-- [ ] `SimpleNpcController` combat MVP.
-- [ ] versioned `NpcBehaviorProfile` schema.
-- [ ] aggressive-melee, ranged, balanced/defensive, support, passive, and flee profile presets.
-- [ ] deterministic action/target scoring and stable tie-breaking.
-- [ ] reaction policy foundation using only advertised legal reaction actions.
-- [ ] safe controller fallback policies.
-- [ ] non-authoritative `NpcDecisionTrace` diagnostics.
-- [ ] complete black-box encounter journey through available-action discovery.
-- [ ] human-vs-`SimpleNpcController` encounter scenario.
-- [ ] AI-vs-AI deterministic smoke scenario.
-- [ ] reaction/interrupt/condition public-play scenarios.
-- [ ] combat-log and encounter-cleanup assertions.
-
-### Exit criteria
-
-A thin programmatic human client can run a complete basic encounter against autonomous non-human opponents without embedding combat rules or manually scripting every enemy turn; NPC actions use only actor-permitted visible information, enter the normal command/rules path, and replay deterministically.
+Exit when a creator can define/validate a basic encounter template and a human-facing test client can instantiate/play it against autonomous enemies through public interfaces with deterministic replay.
 
 ---
 
-## v0.4 — Effect/Resource/Ability Runtime + Progression Primitives
+## v0.4 — Effects/Resources/Abilities + Progression + Authoring/Extension Primitives
 
-### Goal
+Add data-driven effects/features/resources/abilities/conditions/progression, authoring schemas for those definitions, safe declarative DSL expansion, trusted extension points for predicates/effect operations if required, simulation metrics for abilities/resources/effects, and generated-action exploration.
 
-Make mechanics data-driven and provide the primitives needed for classes, spells, powers, talent trees, advanced conditions, and richer legal action choices for both human and simple NPC controllers.
-
-### Deliverables
-
-- [ ] modifier/effect pipeline.
-- [ ] `FeatureDefinition`.
-- [ ] `ResourceDefinition`/state and recovery policies.
-- [ ] `AbilityDefinition` for spells/powers/techniques.
-- [ ] conditions integrated with effects.
-- [ ] triggers, durations, stacking, periodic/area effects.
-- [ ] maintenance/concentration-style hooks.
-- [ ] temporary grants and expiration.
-- [ ] `ProgressionGraph`, nodes, edges.
-- [ ] prerequisite evaluator.
-- [ ] ranked/mutually-exclusive choices.
-- [ ] grant/revoke semantics.
-- [ ] progression respec policy.
-- [ ] progression graph version/migration seam.
-- [ ] representative black-box ability/resource/effect scenarios.
-- [ ] simple NPC scoring support for newly advertised legal ability/support/defensive actions without duplicating rules.
-- [ ] model-based/generated action-state coverage where practical.
-
-### Exit criteria
-
-Representative abilities, conditions, class features, and progression choices can be expressed primarily through reusable definitions/effects instead of custom handlers and exercised by a thin public playtest client, while baseline NPCs can rank/use the resulting legal actions through profile tags rather than custom spell-specific AI code.
+Exit when representative mechanics can be authored/validated/published, exercised by humans/NPCs, and inspected through simulation without custom hidden handlers.
 
 ---
 
-## v0.5 — Spatial Authority + Perception + Exploration + NPC Movement/Perception
+## v0.5 — Spatial Authority + Perception + Exploration + World Authoring
 
-### Goal
+Add spatial adapters, path/LOS/cover/terrain/objects/containers/hazards/scenes/discovery, controller-safe perception/movement, world/location/scene/object authoring schemas, optional trusted spatial adapter provider seam, and spatial/perception simulation invariants.
 
-Make the server authoritative for space and knowledge without coupling to one client representation, and make baseline NPC decisions respect the same perception/movement authority.
-
-### Deliverables
-
-- [ ] spatial adapter contract.
-- [ ] theater-of-mind, graph, square-grid, and continuous-2D adapters.
-- [ ] occupancy, distance, pathfinding hooks, terrain cost, LOS, cover, area queries.
-- [ ] movement path validation.
-- [ ] real-time trajectory contract.
-- [ ] senses/perception API.
-- [ ] hidden-state/knowledge projection.
-- [ ] actor/party/campaign discovery scopes.
-- [ ] terrain definitions.
-- [ ] world objects/interactables.
-- [ ] containers.
-- [ ] hazard/environment hooks.
-- [ ] scene lifecycle.
-- [ ] exploration/travel commands.
-- [ ] location/fact discovery.
-- [ ] party marching-order/formation foundation.
-- [ ] controller-safe `NpcDecisionView` built from visibility/perception projections.
-- [ ] simple NPC movement intents: approach target, maintain preferred range, increase distance, follow actor, hold position, move to assigned point.
-- [ ] hidden/unperceived-target exclusion tests.
-- [ ] black-box exploration/movement journeys across multiple spatial adapters.
-- [ ] role/persona/controller visibility and hidden-information playtests.
-
-### Exit criteria
-
-The same encounter/exploration scene works through at least two spatial adapters, unauthorized clients and NPC controllers receive only visibility-filtered knowledge, and autonomous NPC movement uses authoritative spatial rules rather than a second controller-side path/range rules engine.
+Exit when one exploration/encounter fixture works across multiple spatial adapters and clients/controllers receive only permitted knowledge.
 
 ---
 
-## v0.6 — Complete Character Runtime
+## v0.6 — Complete Character Runtime + Character/Progression Authoring
 
-### Goal
+Add full ruleset-driven character creator/runtime, higher-level/multiclass/advancement/import-export, authoring schemas for classes/species/backgrounds/templates/progression, systematic creator/playtest matrices, and progression reachability analysis.
 
-Support complete API-driven character creation, character sheets, advancement, and optional skill/talent trees.
-
-### Deliverables
-
-- [ ] character-creation sessions/drafts.
-- [ ] ruleset-driven step graph.
-- [ ] draft dependency invalidation/revalidation.
-- [ ] class/subclass selection.
-- [ ] species/background/languages.
-- [ ] ability-score generation/assignment policies.
-- [ ] skills/tool proficiencies.
-- [ ] equipment/items.
-- [ ] feats/features.
-- [ ] spells/powers/loadouts.
-- [ ] identity/appearance/biography.
-- [ ] validation/finalization.
-- [ ] higher-level creation.
-- [ ] multiclass creation/advancement.
-- [ ] character lifecycle states.
-- [ ] character template/import/export validation.
-- [ ] character sheet/skills/features/inventory/spellcasting/resource/action projections.
-- [ ] character history.
-- [ ] advancement sessions.
-- [ ] XP/milestone/progression-point policies.
-- [ ] SRD class progression mapped to progression graphs.
-- [ ] custom branching talent trees/respec hooks.
-- [ ] content-lock compatibility tests.
-- [ ] systematic public character-creation scenario matrix.
-- [ ] upstream-choice revalidation playtests.
-- [ ] higher-level/multiclass playtests where supported.
-- [ ] resulting-character playable-action assertions.
-
-### Exit criteria
-
-A generic client can discover creation choices, create/validate/save/load a complete character, render its sheet and legal actions, and advance it without local rules logic, with representative legal and invalid creation paths exercised programmatically.
+Exit when generic clients and creator tools can discover, author, validate, create, and advance representative characters without local hidden rules.
 
 ---
 
-## v0.7 — Campaign Creator + Living World + Economy + Simple NPC Schedules
+## v0.7 — Campaign Creator + Living World + Creator Studio Foundations + Session Operations + Quality Lab
 
-### Goal
+This is the major composition milestone.
 
-Create complete persistent campaigns beyond combat and connect baseline NPC controllers to simple authored schedules without introducing advanced autonomous planning.
+Add:
 
-### Deliverables
+- campaign creation/templates/content locks/house rules;
+- parties/world/calendar/travel/weather/NPC schedules;
+- quests/dialogue/factions/relationships/economy/vendors/loot/crafting;
+- simple NPC schedule-step integration and `NpcPersonalityProfile`;
+- authoring workspaces/drafts, layered validation, publish-ready/published release workflow;
+- quest/dialogue/world/vendor/recipe/campaign authoring schemas;
+- baseline deterministic narration templates;
+- Creator/DM Studio API foundations and schema discovery;
+- lobbies, invitations, memberships, ready checks, sessions, control grants/handoff;
+- named checkpoints and branch-from-checkpoint/sequence workflow;
+- deterministic session recaps/journals/chronicles;
+- semantic content diff/impact report foundations;
+- typed content migration descriptors and automatic pre-upgrade checkpoint;
+- initial Content Testing SDK;
+- quest/dialogue/world/content reachability analysis;
+- creator-facing ContentQualityReport;
+- Testing Grounds long-form town -> social -> quest -> trade -> travel -> autonomous encounter -> reward -> progression -> checkpoint/session-close journey.
 
-- [ ] campaign-creation sessions/drafts/templates.
-- [ ] timing/progression/rest/spatial/world-clock/visibility/logging configuration.
-- [ ] content-pack dependency resolver.
-- [ ] campaign content locks/revisions.
-- [ ] house-rule sets.
-- [ ] campaign memberships/control grants.
-- [ ] party model and marching order.
-- [ ] game-session model.
-- [ ] optional adventure grouping.
-- [ ] world/region/location hierarchy.
-- [ ] calendar/clock policies.
-- [ ] travel process.
-- [ ] NPC schedules.
-- [ ] weather/environment.
-- [ ] factions/reputation/relationships.
-- [ ] quest objective graphs.
-- [ ] dialogue state machine.
-- [ ] inventory ownership model.
-- [ ] currency/wallets.
-- [ ] vendors/trade.
-- [ ] loot/rewards.
-- [ ] crafting/recipes.
-- [ ] game-log and audit-log projections.
-- [ ] role-aware historical queries.
-- [ ] simple NPC out-of-combat states: idle, follow, hold, move-to-assigned-location, execute-schedule-step.
-- [ ] schedule-step controller integration through normal movement/action validation.
-- [ ] complete campaign-creation public journey.
-- [ ] Testing Grounds long-form town -> social -> quest -> trade -> travel -> AI-controlled encounter -> reward -> progression journey.
-- [ ] crafting/vendor/faction/world-event/NPC-schedule playtests.
-
-### Exit criteria
-
-A client can create a campaign from nothing, attach characters, explore/travel/interact/trade/craft, run social/quest/world systems, encounter schedule-driven NPCs, enter combat against autonomous opponents, and inspect history entirely through the API, with the canonical Testing Grounds journey proving those systems compose correctly.
+Exit when a creator can author/publish a small campaign content set, a DM can host/operate a complete session, and the quality lab can validate/reachability-test/simulate the reference content without bypassing the real runtime.
 
 ---
 
 ## v0.8 — Advanced Intelligent and External Controllers
 
-### Goal
+Build richer utility/goals/memory/schedules/external/LLM controllers on the proven baseline. Add controller comparisons in the simulation lab, explicit external-controller circuit breakers/fallbacks, AI DM command surfaces, and trusted controller-provider extension seams.
 
-Build richer AI/controller capabilities on top of the already-working deterministic `SimpleNpcController` baseline without weakening visibility, command, replay, or failure boundaries.
-
-### Deliverables
-
-- [ ] richer utility-AI controller.
-- [ ] goals/tactical scoring beyond the baseline one-step profile.
-- [ ] optional memory/knowledge hooks using only visible/permitted state.
-- [ ] richer schedules/planning policies.
-- [ ] intent-to-command boundary for external controllers.
-- [ ] optional external LLM/agent adapter.
-- [ ] AI Dungeon Master command surface.
-- [ ] controller handoff/reconnect semantics.
-- [ ] external-controller timeout/circuit-breaker policies.
-- [ ] deterministic scripted-controller fixtures.
-- [ ] controller version/profile migration/compatibility tests.
-- [ ] fallback to `SimpleNpcController` where configured if advanced/external controllers fail.
-- [ ] run applicable human-play scenarios with simple, scripted, utility, and optional external AI-controlled actors.
-- [ ] verify all AI clients/controllers receive no more hidden information/capabilities than permitted.
-
-### Exit criteria
-
-An encounter and basic living-world loop can operate with richer AI/scripted/external NPC controllers while all actions remain rules-validated, authorized, replayable, replaceable, and testable through the same public/application command boundaries; `SimpleNpcController` remains available as the deterministic baseline/reference implementation.
+`SimpleNpcController` remains the deterministic baseline/reference/fallback.
 
 ---
 
-## v0.9 — Universal Client API
+## v0.9 — Stable Universal Client + Creator + Operations + Extension APIs
 
-### Goal
+Stabilize `/api/v1`, OpenAPI/error/version/deprecation contracts, auth, discovery, projections, action targeting, history cursors, WebSocket resume/backpressure/snapshot+delta, localization/assets/import-export, Python SDK, terminal/WebSocket clients, plus:
 
-Stabilize contracts so clients become presentation layers.
+- stable Creator/DM Studio authoring/schema-discovery APIs;
+- stable lobby/session/control/checkpoint/branch/recap/journal APIs;
+- stable Simulation/Content Testing SDK and CLI contracts;
+- remote test deployment support;
+- stable trusted extension API/capability contracts;
+- content semantic diff/compatibility/impact/migration-preview APIs;
+- controller assignment/status surfaces without leaking hidden AI state.
 
-### Deliverables
-
-- [ ] stable `/api/v1` REST surface.
-- [ ] complete error/version/deprecation contract.
-- [ ] OpenAPI contract/examples.
-- [ ] authentication/authorization.
-- [ ] character/campaign creator schema discovery.
-- [ ] progression tree rendering metadata.
-- [ ] character/campaign projections.
-- [ ] available-action/target discovery.
-- [ ] event/history cursor contracts.
-- [ ] WebSocket handshake/subscriptions/resume/backpressure.
-- [ ] snapshot + delta synchronization.
-- [ ] movement trajectory events.
-- [ ] role-aware visibility.
-- [ ] localization/units/accessibility metadata.
-- [ ] asset-reference APIs.
-- [ ] import/export APIs.
-- [ ] rate-limit semantics.
-- [ ] controller assignment/status query surface where appropriate without exposing hidden AI state.
-- [ ] Python SDK.
-- [ ] generated/open SDK contract tests.
-- [ ] reference terminal and WebSocket clients.
-- [ ] run human-play harness against both in-process and real server transport modes.
-- [ ] reconnect/resync/backpressure black-box matrix.
-- [ ] public SDK/reference-client playtest compatibility suite.
-
-### Exit criteria
-
-A thin client can discover capabilities, create/load a campaign and character, join a session, explore, interact, play encounters against autonomous NPCs, receive live events, reconnect safely, and inspect world/quest/history without embedding SRD or AI decision logic, and the same executable scenarios can validate multiple public client transports.
+Exit when the same executable scenarios can validate public game clients, creator workflows, session operations, simulation tooling, and content-upgrade preview through stable contracts.
 
 ---
 
-## v1.0 — Production-Ready SRD 5.2.1 RPG Engine API
+## v1.0 — Production-Ready SRD 5.2.1 RPG Engine Platform
 
-### Goal
-
-Deliver a stable, reusable, documented API-first RPG simulation platform.
-
-### Deliverables
-
-- [ ] stable core domain interfaces.
-- [ ] stable command/event/query schemas.
-- [ ] stable controller assignment/profile schemas.
-- [ ] deterministic `SimpleNpcController` baseline implementation.
-- [ ] SRD 5.2.1-compatible rules package and CC attribution.
-- [ ] deterministic replay suite.
-- [ ] event upcast fixtures across released schemas.
-- [ ] projection rebuild tooling.
-- [ ] content-pack upgrade/rollback tests.
-- [ ] sample campaign, characters, encounters, quests, autonomous NPC profiles, and world content.
-- [ ] API/ruleset/client/controller-authoring documentation.
-- [ ] deployment/migration/backup documentation.
-- [ ] PostgreSQL migrations.
-- [ ] observability baseline.
-- [ ] security/authorization audit.
-- [ ] visibility-leak tests including controller visibility.
-- [ ] load/latency benchmark harness and documented target profile.
-- [ ] automated backup/restore verification.
-- [ ] crash recovery of timelines/decision windows/controller eligibility.
-- [ ] terminal reference client.
-- [ ] release/versioning policy.
-- [ ] complete acceptance matrix below.
-- [ ] executable public-interface implementation of the 76-step v1.0 acceptance matrix.
-- [ ] deterministic failure replay bundles for release human-play scenarios.
-- [ ] full feature coverage manifest with no unexplained user-visible/controller gaps.
-- [ ] release playtest modes covering deterministic full, reconnect/recovery, visibility/security, selected chaos, controller behavior, and migration/replay scenarios.
+Deliver stable core/game/client/controller schemas, SRD-compatible rules package, deterministic `SimpleNpcController`, complete authoring/validation/publish workflow, reference Creator APIs/examples, complete session/lobby/checkpoint/recap workflow, Content Testing SDK and simulation-lab reference workflows, trusted extension boundary documentation, content upgrade dry-run/activation/rollback-or-branch workflow, migration/replay fixtures, sample campaign/content, observability/security/backup/recovery/performance tooling, reference clients, and executable release acceptance scenarios.
 
 ### v1.0 success statement
 
-A third-party developer can build a turn-based, timed-turn, ATB-style, real-time-with-pause, or real-time fantasy RPG client using the same server, without modifying the authoritative core or duplicating hidden rules, while baseline non-human characters can play autonomously with deterministic replaceable AI and the repository can prove the full system programmatically by playing the reference campaign end to end through public interfaces.
+A third-party developer can build a supported client; a creator can author/validate/publish content; a DM can host and recover sessions; non-human actors can play autonomously; content can be simulated and quality-checked; and campaigns can safely evolve content versions—all without modifying the authoritative core, duplicating hidden rules, or destroying historical replayability.
 
 ---
 
 # 39. v1.0 end-to-end acceptance matrix
 
-A v1.0 release is not complete until automated reference scenarios prove the following through public interfaces. These steps are **executable acceptance requirements**, not documentation-only examples.
+The existing gameplay acceptance matrix remains mandatory and executable. It must cover rules/content setup, campaign/lobby/session creation, character creation, exploration/world interaction, social/quest systems, encounter/timing/controllers, progression, logs/history/replay, live sync, and content/controller evolution/recovery.
 
-## Rules/content setup
-
-1. Discover engine/API versions.
-2. Discover installed rulesets.
-3. Validate/install compatible content packs.
-4. Resolve dependencies into a deterministic campaign content lock.
-5. Configure a typed house-rule set.
-
-## Campaign creation
-
-6. Begin/resume a campaign draft.
-7. Choose ruleset/template.
-8. Configure combat timing and timeout behavior.
-9. Configure world clock, rest, progression, visibility, logging, spatial, content, and baseline NPC-controller policies.
-10. Create world/region/location/scene data.
-11. Finalize the campaign.
-12. Add members and roles.
-13. Create a party and marching order.
-14. Open a game session.
-
-## Character creation
-
-15. Begin/resume a character draft.
-16. Choose class/origin/species/background/languages as supported.
-17. Assign abilities/proficiencies/equipment/features/spells-or-powers.
-18. Change an upstream selection and prove downstream revalidation works.
-19. Create a higher-level character through sequentially valid choices.
-20. Validate/finalize the character.
-21. Add the character to the party.
-22. Query the complete visibility-filtered character sheet.
-
-## Exploration/world interaction
-
-23. Enter a scene/location.
-24. Query perceived entities rather than omniscient state.
-25. Move using authoritative movement.
-26. Discover hidden/unknown information through rules-driven play.
-27. Interact with a world object/container.
-28. Transfer/store/retrieve inventory items.
-29. Complete a trade transaction.
-30. Start and complete crafting using simulation time.
-31. Travel with marching order and world-time advancement.
-32. Observe a scheduled world/environment/NPC schedule event.
-
-## Social/quest systems
-
-33. Start a dialogue state machine.
-34. Resolve a conditional dialogue choice.
-35. Change faction/reputation/relationship state through events.
-36. Accept a quest.
-37. Advance parallel/conditional objectives.
-38. Complete/fail a time-sensitive objective deterministically.
-
-## Encounter/action/timing/controller systems
-
-39. Create/start an encounter from scene state with at least one non-human participant assigned `SimpleNpcController`.
-40. Establish participants/positions/controller assignments.
-41. Query human available actions and valid target schemas while the autonomous NPC receives only its controller-safe visible decision view.
-42. Execute human movement/rules actions and allow the NPC to choose/submit its own legal action through the normal command path.
-43. Spend/reserve/recover resources for human and AI-selected actions.
-44. Apply/remove a condition/effect and prove controller behavior only changes through visible/legal resulting state.
-45. Open and resolve human/NPC interrupt/reaction windows.
-46. Interrupt/cancel an action and verify refund policy.
-47. Exercise a timed human decision window that expires deterministically while NPC decisions remain event-driven/non-blocking.
-48. Reconnect/recover during an active decision window/encounter without duplicating NPC actions.
-49. Exercise simultaneous/conflicting human/NPC commands and deterministic ordering.
-50. Complete encounter cleanup and rewards, then replay to the same canonical state.
-
-## Progression
-
-51. Grant XP/milestone/progression currency according to campaign policy.
-52. Begin an advancement session.
-53. Unlock/choose progression nodes.
-54. Validate mutually exclusive/prerequisite choices.
-55. Complete advancement and update derived projections.
-
-## Logs/history/replay
-
-56. Query player game log.
-57. Query combat log including NPC actions without exposing hidden decision inputs.
-58. Query character history.
-59. Query DM/admin audit log with proper authorization.
-60. Inspect state at an earlier sequence.
-61. Rebuild projections from events.
-62. Replay from snapshot and from start to the same canonical state.
-63. Replay an older-schema golden event stream through upcasters.
-
-## Live client sync
-
-64. Connect WebSocket and subscribe.
-65. Receive ordered visibility-filtered events for human and NPC-generated actions.
-66. Disconnect, miss events, reconnect, and resume.
-67. Force buffer exhaustion and verify resumable resync instead of silent loss.
-68. Fetch snapshot + delta without a race gap.
-
-## Content/controller evolution and recovery
-
-69. Propose a content-pack/controller-profile revision.
-70. Validate dependency/migration/controller compatibility.
-71. Activate a new campaign content/controller-profile revision.
-72. Replay old history with old pinned definitions/profile refs and new history with the new revision.
-73. Roll back a failed content/controller revision when allowed.
-74. Back up the deployment.
-75. Restore into a clean environment and verify campaign/event/projection/controller-assignment hashes/refs.
-76. Restart during scheduled/decision/controller-eligible state and recover without duplicate actions.
-
-If all 76 scenarios pass while a thin client never embeds hidden game rules, the baseline NPC controller never receives omniscient state, and neither client nor controller mutates authoritative state directly, v1.0 meets the architecture goal.
+In addition, v1.0 release scenarios must demonstrate the creator/operations/quality/extension acceptance set in Section 47.
 
 ---
 
 # 40. Definition of a planning-complete subsystem
 
-No future subsystem is considered planned merely because its interface or noun appears in this document.
+A subsystem is not considered planned merely because a noun/interface exists. Before implementation define:
 
-Before implementation, each core subsystem must define:
-
-- authoritative state;
+- authoritative state or explicit non-authoritative/mutable-draft status;
 - content/definition schema;
-- commands;
-- events;
+- commands/events where authoritative;
 - queries/projections;
 - lifecycle/state machine;
-- permissions;
-- visibility rules;
-- concurrency/idempotency behavior;
-- persistence/replay behavior;
+- permissions and visibility;
+- concurrency/idempotency;
+- persistence/replay implications;
 - migration/version behavior;
-- error/failure behavior;
-- WebSocket/live behavior where relevant;
+- failure/error behavior;
+- live/API behavior where relevant;
 - import/export behavior where relevant;
-- controller/AI behavior and information boundaries where relevant;
-- deterministic fallback behavior where autonomous controllers are involved;
-- automated tests and milestone exit criteria;
+- controller/AI boundary where relevant;
+- authoring/validation/publish workflow where relevant;
+- simulation/reachability/quality evidence where relevant;
+- trusted extension implications where relevant;
+- automated tests/milestone exit criteria;
 - source/license provenance for distributable content;
-- the programmatic human/client journey that proves the subsystem through public interfaces when user-visible;
-- coverage-manifest entries linking the subsystem to positive, negative, visibility, timing, reconnect, controller, and replay scenarios as applicable.
-
-This checklist applies to every new roadmap item.
+- public human/client journey for user-visible behavior;
+- coverage-manifest entries for positive/negative/visibility/timing/reconnect/controller/replay cases.
 
 ---
 
 # 41. Definition of done for every milestone
 
-A milestone is not complete until:
-
-- [ ] code is typed;
-- [ ] async paths avoid blocking operations;
-- [ ] unit tests pass;
-- [ ] integration tests pass where applicable;
-- [ ] deterministic/replay invariants pass where applicable;
-- [ ] visibility tests pass where applicable;
-- [ ] controller determinism/visibility/fallback tests pass where applicable;
-- [ ] public schemas and controller/profile schemas are documented/versioned;
-- [ ] migrations/upcasters are included for persistence/schema changes;
-- [ ] architecture changes are documented;
-- [ ] licensed-content attribution remains correct;
-- [ ] no client-specific assumptions leak into the core;
-- [ ] no controller-specific rules logic leaks into the authoritative rules engine or vice versa;
-- [ ] command/event versions remain compatible or migration is documented;
-- [ ] observable failures produce actionable structured logs;
-- [ ] concurrency/idempotency behavior is tested;
-- [ ] milestone exit criteria are demonstrated through public APIs;
-- [ ] every implemented user-visible gameplay capability has an appropriate black-box human-play scenario;
-- [ ] relevant timeout/retry/reconnect behavior is exercised without long real sleeps;
-- [ ] playtest failures capture deterministic seeds/transcripts/replay metadata;
-- [ ] the feature coverage manifest is current, including controller/profile variants when relevant;
-- [ ] the playtest client and NPC controllers do not duplicate hidden authoritative rules.
+A milestone is not complete until applicable code is typed/non-blocking; unit/integration/determinism/replay/visibility/controller tests pass; public schemas are documented/versioned; migrations/upcasters are included; licensing/provenance is correct; command/event/controller/content compatibility is preserved; concurrency/idempotency is tested; user-visible features have black-box play scenarios; timing uses controllable clocks; failures are reproducible; coverage manifests are current; creator-facing schemas validate/publish correctly; simulation/reachability checks exist where the feature is content-driven; and extension/content migrations are dry-run/replay-tested where interpretation changes.
 
 ---
 
 # 42. First implementation slice
 
-The first implementation PR should remain intentionally small and prove the architecture rather than importing large content catalogs or implementing advanced AI.
-
-Suggested scope:
+The first slice remains intentionally small:
 
 ```text
-src/rpg_engine_api/
-    app.py
-    config.py
-    domain/
-        ids.py
-        definitions.py
-        requirements.py
-        choices.py
-        visibility.py
-        controllers.py
-        commands.py
-        events.py
-        dice.py
-        campaign.py
-        actor.py
-    controllers/
-        interfaces/
-        registry.py
-    application/
-        command_bus.py
-    persistence/
-        event_store.py
-        outbox.py
-    api/
-        health.py
-        commands.py
-
-tests/
-    unit/
-    controllers/
-    determinism/
-    replay/
-    playtest/
-        harness/
-        scenarios/
-        fixtures/
-        manifests/
+app/config
+shared IDs/definitions/requirements/choices/visibility
+controller assignment/interface seam
+commands/events/dice/campaign/actor
+command bus
+event store/outbox
+health/command API
+playtest harness skeleton
+quality/compatibility artifact schemas
 ```
 
-Prove at minimum:
-
-```text
-CreateCampaign command
-    -> CampaignCreated event
-
-CreateActor command
-    -> ActorCreated event
-
-ControllerAssignment
-    -> actor can reference human/simple_npc/scripted/system controller type + version/profile ref
-
-RollDice internal operation
-    -> DiceRolled event
-
-replay(events)
-    -> identical state hash
-
-repeat command with same idempotency key
-    -> no duplicate event
-
-stale expected stream version
-    -> deterministic state_conflict
-
-public playtest client
-    -> creates minimal state
-    -> submits public command
-    -> observes receipt/event/projection
-    -> replays history
-    -> verifies identical canonical hash
-```
-
-Do not implement `SimpleNpcController` tactical behavior in the first slice unless it is needed for the requested PR; establish the controller boundary first, then implement the combat MVP in v0.3 as defined by Section 46.
-
-Do not start by importing hundreds of spells, monsters, classes, or items. Prove the runtime, controller, and human-play testing seams first.
+Prove CreateCampaign/CreateActor, controller assignment, deterministic dice, replay hash, idempotent retry, stale stream conflict, and one public playtest command/replay path. Do not import large content catalogs, implement advanced AI, or build the full Creator Studio yet.
 
 ---
 
 # 43. Deliberately post-v1.0 work
 
-These are explicitly future scope, not unresolved placeholders:
-
-- distributed zone/shard servers;
-- large-world interest management across many processes;
-- cross-region actor migration;
-- massive-scale presence;
-- advanced behavior trees/GOAP/planners beyond the initial advanced-controller contract unless pulled forward deliberately;
-- rich procedural world-generation tooling;
-- full visual map editor;
-- marketplace/distribution service for third-party content packs;
-- hosted billing/entitlements;
-- advanced collaborative authoring;
-- polished branching/alternate-timeline UX beyond underlying replay primitives;
-- engine-specific Godot/Unity rendering integrations beyond reference SDK/client contracts.
-
-A later large-world roadmap can build these on top of the v1.0 deterministic simulation/runtime/controller boundary.
+Explicit future scope includes distributed zones/shards, large-world cross-process interest/migration, massive presence, sophisticated behavior-tree/GOAP/planner systems beyond the initial advanced-controller boundary, rich procedural-world tooling, polished full visual map/creator editors, third-party extension/content marketplaces, hosted billing/entitlements, advanced collaborative authoring, polished alternate-timeline UX, and engine-specific rendering integrations beyond reference client/SDK contracts.
 
 ---
 
 # 44. Long-term product goal
 
-The finished engine should support configurations such as:
+The engine should support multiple timing modes and replaceable controllers without replacing the game-state model, rules runtime, action system, scheduler, persistence, client API, authoring formats, or replay model.
 
-```text
-ruleset = srd_5_2_1
-combat_mode = turn_based
-npc_controller = simple_npc
-```
+> **The engine understands time, events, actions, resources, effects, space, knowledge, rules, content, sessions, and replaceable controllers—not one hard-coded turn system, client, authoring UI, or AI implementation.**
 
-```text
-ruleset = srd_5_2_1
-combat_mode = timed_turn_based
-turn_deadline = 15s
-timeout_policy = forfeit_turn
-npc_controller = simple_npc
-```
-
-```text
-ruleset = srd_5_2_1
-combat_mode = active_time
-npc_controller = simple_npc
-```
-
-```text
-ruleset = srd_5_2_1
-combat_mode = real_time
-npc_controller = simple_npc
-```
-
-without replacing the game-state model, rules runtime, action system, scheduler, persistence layer, client API, or controller boundary.
-
-The central architectural constraint is therefore:
-
-> **The engine understands time, events, actions, readiness, deadlines, resources, effects, space, knowledge, rules, and replaceable controllers—not one hard-coded notion of a turn, one hard-coded client, or one hard-coded AI implementation.**
-
-The corresponding testing constraint is:
-
-> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public API/live protocol and leave behind a reproducible transcript, coverage record, and replayable authoritative history; if a non-human actor can do it autonomously, its controller must be reproducible, visibility-safe, and rules-subordinate.**
+> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public interfaces; if content can be authored, it must be validateable/testable/versionable; if a campaign evolves, old history must remain interpretable.**
 
 ---
 
 # 45. Programmatic human-play testing architecture
 
-This section anchors [`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) into the canonical roadmap. The detailed specification may evolve as implementation teaches us more, but the requirements below are architectural constraints.
+[`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) is normative. Public-interface-only playtests model player/DM/spectator personas, timing/reconnect behavior, independent seeds, scenario DSL/transcripts, visibility/invariant assertions, failure replay bundles, generated available-action walkers, chaos/recovery, CI modes, coverage manifests, and the continuous Testing Grounds campaign journey.
 
-## 45.1 Public-interface-only gameplay proof
-
-End-to-end gameplay tests act through authenticated public REST/WebSocket interfaces. Direct aggregate calls, DB patches, hidden rules helpers, or test-only gameplay mutations do not count as human-play coverage.
-
-Internal fixture controls may configure the test environment—such as an injected controllable clock—but the simulated player/DM must still perform gameplay through production-equivalent public contracts.
-
-## 45.2 Personas
-
-The harness models at least player, DM/owner, spectator, slow player, reconnecting player, and invalid-action player behavior as features require them. Multi-client scenarios share one authoritative campaign and use async-safe structured concurrency.
-
-Non-human actors are not human-play personas: once baseline AI exists, they use the assigned server-side controller unless a scenario explicitly scripts an NPC to test a narrow rules edge case.
-
-## 45.3 Human timing behavior
-
-Scenarios support immediate actions, deterministic think times, just-before-deadline actions, exact-boundary assertions, timeout/no-action, invalid-then-correct actions, reaction accept/decline, disconnect/reconnect, and duplicate/retry behavior.
-
-No test waits through long gameplay durations with `sleep()`. Simulation and wall-clock decision behavior use injectable controllable test clocks while preserving production semantics.
-
-## 45.4 Independent seeds
-
-Authoritative game RNG streams, any future NPC controller-variation RNG, and playtest/human-behavior RNG are independent. A generated player delay/action choice or NPC tie-break may not alter the next authoritative die, loot roll, or world result.
-
-The MVP `SimpleNpcController` should use stable deterministic tie-breaking without RNG.
-
-Every failure records the seed/version bundle required to reproduce it.
-
-## 45.5 Scenario DSL and transcripts
-
-Use typed/versioned scenario definitions and semantic client steps such as campaign/character creation, query available actions, submit action, move, interact, dialogue choice, quest operation, trade, craft, encounter action, reaction, disconnect/reconnect, replay, and assertions.
-
-Every run can emit a chronological transcript readable like a game session.
-
-For autonomous NPC actions, transcripts should show resulting visible actions/events while keeping hidden controller input/details role-appropriate.
-
-## 45.6 Assertions
-
-Human-play scenarios assert transport contracts, player-visible projections, event ordering, logs, hidden-information absence, resource/inventory invariants, timeout behavior, reconnect behavior, NPC-controller outcomes where relevant, and replay state hashes.
-
-Golden snapshots should cover stable meaningful contracts rather than incidental formatting.
-
-## 45.7 Coverage manifest
-
-Maintain a machine-readable feature coverage manifest mapping roadmap features to unit/integration/human-play scenarios plus timing modes, roles/personas, controller/profile variants, spatial adapters, negative cases, and replay cases.
-
-This manifest is part of milestone/release evidence.
-
-## 45.8 Failure replay bundles
-
-A failed scenario captures scenario/version, repository/engine revision, content lock, seed bundle, personas, controller/profile versions, executed steps, relevant REST receipts, WebSocket events, projection snapshots, sequence range, canonical hashes, and assertion failure—without secrets.
-
-The desired workflow is effectively:
-
-```text
-failure artifact -> one deterministic local replay
-```
-
-## 45.9 Generated/model-based players
-
-In addition to curated journeys, generated walkers may query available actions and choose valid inputs using a separate deterministic scenario RNG. Near-valid invalid-action generators and Hypothesis state machines explore rejection paths and invariants.
-
-Generated clients must use advertised server capabilities rather than implementing hidden rules.
-
-NPC-controller generation/variation must remain separate from human-play walkers and authoritative game RNG.
-
-## 45.10 Chaos and recovery
-
-Selected scenarios may inject network disconnects, HTTP retries, duplicate delivery, slow consumers, process restart, DB reconnect, outbox delay, projection lag, and auth/session expiration. The infrastructure can be disturbed, but authoritative game rules cannot be bypassed.
-
-Controller error/fallback and restart-while-controller-eligible cases are included once controller execution exists.
-
-## 45.11 CI modes
-
-The harness should support intents such as:
-
-```text
-smoke
-pr
-full
-nightly
-release
-fuzz
-chaos
-```
-
-PR runs combine affected feature-tag scenarios with mandatory core regressions. Scheduled full runs prevent selective-test blind spots. Release runs include the complete deterministic gameplay journey, migration/replay, visibility/security, reconnect/recovery, controller behavior, and selected chaos/performance gates.
-
-Exact runtime budgets are measured and tuned from evidence rather than guessed in advance.
-
-## 45.12 Canonical long-form campaign journey
-
-`Testing Grounds` grows into one continuous playable scenario:
-
-```text
-discover/install rules
-    -> create campaign
-    -> configure timing/controller defaults
-    -> add player
-    -> create character
-    -> join party/session
-    -> enter town
-    -> talk to NPC
-    -> accept quest
-    -> acquire/trade item
-    -> travel/explore
-    -> discover hidden information
-    -> enter encounter with SimpleNpcController opponents
-    -> move/attack/use ability
-    -> observe autonomous NPC action
-    -> react
-    -> intentionally miss a timed turn
-    -> complete encounter
-    -> collect reward
-    -> progress quest
-    -> advance/unlock feature
-    -> disconnect/reconnect
-    -> inspect logs/history
-    -> replay campaign
-    -> verify canonical state
-```
-
-Subsystem-specific scenarios still exist, but this long-form journey proves the systems compose as one actual game.
-
-## 45.13 v1.0 release requirement
-
-The 76-step acceptance matrix in Section 39 must be represented by executable scenario(s) using public interfaces. Passing prose review is not sufficient.
-
-A release candidate must be able to produce artifacts showing exactly which acceptance steps, roles, timing modes, controller/profile variants, and feature entries were exercised and must reproduce any failure from its captured scenario/seed/history bundle.
+The v1.0 gameplay acceptance matrix must be executable, not prose-only.
 
 ---
 
 # 46. Baseline deterministic NPC AI architecture
 
-This section anchors [`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md) into the canonical roadmap and clarifies that basic autonomous NPC behavior is implemented before the advanced-AI milestone.
+[`docs/ai/SIMPLE_NPC_AI.md`](docs/ai/SIMPLE_NPC_AI.md) is normative.
 
-## 46.1 Purpose
+Baseline AI is a deterministic one-decision-at-a-time `SimpleNpcController` using visibility-filtered state and server-advertised legal actions. Versioned behavior profiles cover aggressive melee, ranged, balanced/defensive, support, passive, and flee. It submits normal commands, has safe deterministic fallback, and does not generate natural language or perform long-term planning.
 
-The initial AI exists to make ordinary NPCs/creatures and end-to-end playtests function without requiring a cloud model or hand-scripted enemy turn for every encounter.
-
-It is intentionally a one-step deterministic policy controller.
-
-It does **not** perform long-term planning, natural-language generation, multi-turn search, or arbitrary code execution.
-
-## 46.2 Behavior profile
-
-Conceptual versioned data:
+Roadmap placement:
 
 ```text
-NpcBehaviorProfile
-    id
-    version
-    mode
-    hostility_policy
-    target_policy
-    retreat_threshold_percent
-    preferred_range
-    preferred_action_tags[]
-    discouraged_action_tags[]
-    forbidden_action_tags[]
-    reaction_policy
-    movement_policy
-    fallback_policy
+v0.1 controller assignment/interface seam
+v0.2 eligibility hooks
+v0.3 combat MVP
+v0.5 perception/spatial movement integration
+v0.7 authored schedule integration
+v0.8 advanced utility/external/LLM controllers
 ```
 
-Initial profiles remain small:
+---
+
+# 47. Creator, DM operations, simulation quality, extensions, and content evolution
+
+This section incorporates all twelve additional planning areas into the canonical roadmap. Detailed schemas/workflows are normative in:
+
+- [`docs/authoring/CONTENT_AUTHORING.md`](docs/authoring/CONTENT_AUTHORING.md)
+- [`docs/operations/DM_SESSION_OPERATIONS.md`](docs/operations/DM_SESSION_OPERATIONS.md)
+- [`docs/testing/SIMULATION_QUALITY_LAB.md`](docs/testing/SIMULATION_QUALITY_LAB.md)
+- [`docs/extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md`](docs/extensions/TRUSTED_EXTENSIONS_AND_MIGRATIONS.md)
+
+## 47.1 Content authoring system
+
+Use a mutable `AuthoringWorkspace`/`DraftDefinition` lifecycle followed by layered validation, runtime preview/playtest, publish-ready state, and immutable versioned `PublishedContentPack` releases. Finalized campaigns never reference mutable drafts.
+
+Validation covers schemas, namespaces, references, ruleset compatibility, provenance/licenses, graph reachability, semantic/runtime instantiation, and required play/simulation evidence.
+
+## 47.2 Creator / DM Studio API
+
+Provide schema-discoverable authoring APIs for creatures/NPCs, items, abilities, progression trees, quests, dialogue, encounters, world/scene/location content, vendors, recipes, AI profiles, campaign templates, and narration templates.
+
+Specialized editor projections are convenience views; canonical published definitions remain runtime schemas. Creator APIs cannot bypass campaign command/event authority.
+
+## 47.3 Encounter authoring
+
+`EncounterTemplate` is versioned content distinct from runtime `Encounter` instances. Templates define participant groups/controller assignments, spawns/positions, waves/triggers, objectives, environmental effects, reinforcements, escape/completion/failure policies, rewards, scaling, and narration refs.
+
+Creators can preview resolved participants/actions/map validity and run simulation/playtest evidence before publication.
+
+## 47.4 Automated balance / simulation lab
+
+Use the real engine runtime/rules/controllers to run reproducible encounter/situation batches under deterministic seeds and configuration matrices. Capture outcome/duration/action/resource/controller/objective metrics and retain outlier seeds.
+
+Support matched-seed comparisons across encounter/content/controller/timing revisions. Do not reduce this to one opaque universal “balance score.”
+
+## 47.5 Narration / presentation layer
+
+Authoritative events are facts. Narration is a visibility-filtered projection using deterministic localized templates as baseline. `GameMessage` links back to source event IDs/sequence ranges. Optional later LLM narration may paraphrase visible facts but cannot create authoritative consequences or hidden facts.
+
+## 47.6 Game/lobby lifecycle
+
+Explicitly support invitations/membership, lobby open/join/leave, actor selection/control grants, ready checks, session open/pause/resume/close, multi-device conflict handling, spectator presence, disconnect grace, AFK policies, and explicit temporary controller handoff/restoration.
+
+Lobby/presence metadata is not automatically authoritative gameplay history.
+
+## 47.7 Named saves/checkpoints/branches
+
+`CampaignCheckpoint` records a named historical sequence/time/content lock and optional snapshot ref. Checkpoint deletion removes only the reference.
+
+Default restore creates `CampaignBranch` from a checkpoint/sequence, preserving parent/fork metadata and old history. Pre-migration/session-boundary automatic checkpoints are supported.
+
+## 47.8 Session recaps and journals
+
+Deterministic role-aware projections include `SessionRecap`, `CharacterJournal`, `QuestJournal`, `DiscoveryJournal`, `CampaignChronicle`, `NpcEncounterHistory`, and faction/location histories.
+
+Optional AI summarization operates on visibility-filtered structured recap facts and never replaces authoritative history.
+
+## 47.9 NPC social personality
+
+`NpcPersonalityProfile` is separate from combat/action `NpcBehaviorProfile`. Personality carries disposition, goals, loyalties, fears, interests, topic/style tags, relationship/aggression/assistance thresholds, and trade preferences. Social/dialogue rules use visible/known relationship/faction/quest context plus legal social actions.
+
+## 47.10 Content Testing SDK
+
+Expose programmatic creator/CI functionality for pack validation, creature/encounter instantiation, playtest execution, encounter simulation, batch comparison, quest/dialogue/progression reachability, unobtainable-item/unusable-ability detection, and machine-readable quality reports.
+
+Provide a scriptable CLI/API by v0.9. Important outlier/failure runs can be promoted into permanent regression fixtures.
+
+## 47.11 Trusted extension/plugin boundary
+
+Ordinary `ContentPack`s are data-only and may use only typed declarative engine DSLs. Executable customization uses explicitly deployment-installed `RulesExtension`s with versioned manifests, narrow capabilities/interfaces, explicit permissions, failure isolation, and deterministic/replay compatibility for authoritative effects.
+
+Never auto-load executable code from user-uploaded content archives.
+
+## 47.12 Compatibility and content migration UX
+
+Before live content changes, support candidate lock resolution, semantic revision diff, `CompatibilityReport`, `CampaignContentImpactReport`, typed `ContentMigrationPlan`, isolated dry run/branch, required validation/playtests, automatic checkpoint, atomic activation, and post-activation replay/projection verification.
+
+Rollback occurs only when a valid reverse path exists; otherwise branch from the pre-upgrade checkpoint. Active campaign mechanics default to manual upgrade policy rather than silent automatic changes.
+
+## 47.13 Creator/session/quality acceptance requirements
+
+In addition to Section 39 gameplay acceptance, v1.0 must programmatically prove:
+
+1. Create an authoring workspace and draft definitions.
+2. Produce and resolve validation errors for bad references/graphs/provenance.
+3. Author and preview a creature/NPC with behavior and personality profiles.
+4. Author an `EncounterTemplate` with participants, objectives, reward, and controller assignments.
+5. Run encounter smoke simulation using the real runtime.
+6. Run a deterministic simulation batch and reproduce a selected outlier seed.
+7. Run quest/dialogue/progression reachability analysis on reference content.
+8. Publish an immutable versioned content pack only after required gates pass.
+9. Open a campaign lobby, invite/join a player, assign actor control, and complete a ready check.
+10. Open a game session and play through the reference content.
+11. Disconnect a player, apply configured temporary control handoff, reconnect, and explicitly restore control.
+12. Create a named checkpoint.
+13. Create a branch from that checkpoint and verify identical state at the fork sequence.
+14. Close the session and produce visibility-correct recap/journal/chronicle projections.
+15. Render deterministic narration messages linked to source events.
+16. Demonstrate ordinary content packs cannot execute arbitrary code.
+17. Install/enable a trusted test extension only through authorized administration and declared capabilities.
+18. Propose a content revision and generate semantic diff/compatibility/campaign-impact reports.
+19. Dry-run its migration on an isolated copy/branch and run required play/simulation checks.
+20. Activate the content revision with an automatic checkpoint and verify old/new history across the lock boundary.
+21. Demonstrate safe rollback or required branch-from-checkpoint behavior when direct rollback is unsafe.
+22. Use the Content Testing SDK/CLI to reproduce validation, reachability, simulation, and regression workflows without direct DB mutation.
+
+## 47.14 Unified creator-to-play-to-evolution journey
+
+The long-form reference workflow should eventually prove:
 
 ```text
-aggressive_melee
-ranged
-balanced
- defensive
-support
-passive
-flee
+creator drafts content
+    -> validates/reachability-checks
+    -> authors encounter/NPC personality/controller profiles
+    -> simulates/playtests
+    -> publishes pack
+    -> DM creates campaign
+    -> opens lobby/invites players
+    -> ready check/session open
+    -> players create/join with characters
+    -> town/social/quest/trade/craft/explore
+    -> autonomous encounter
+    -> reward/progression
+    -> checkpoint
+    -> disconnect/handoff/reconnect
+    -> session close/recap/journals
+    -> propose content update
+    -> semantic diff/impact/dry-run
+    -> checkpoint + activate migration
+    -> replay old/new history
+    -> branch/rollback if required
 ```
 
-Creatures/templates may reference a profile; profiles are replaceable configuration rather than hard-coded creature classes.
-
-## 46.3 Decision algorithm
-
-For each decision window/eligibility event:
-
-```text
-1. Build controller-safe visible decision view.
-2. Get server-advertised legal actions/targets.
-3. If retreat policy threshold is met, prefer legal retreat/disengage/distance-increasing choices.
-4. If support profile has a legal eligible support action, score it.
-5. Score legal offensive action/visible-target candidates.
-6. If no useful offensive action is in range, score legal movement toward/away/from preferred range.
-7. Score configured defensive choices.
-8. Apply safe fallback policy if no useful candidate remains.
-9. Choose highest integer score.
-10. Break ties by stable action key, target key, then parameter order.
-11. Submit the resulting typed command through the normal application/rules path.
-```
-
-The AI does not recalculate action legality. `available_actions`/rules/spatial systems own legality.
-
-## 46.4 Initial scoring
-
-A simple integer score is enough:
-
-```text
-score =
-    profile_base_score(action_tags)
-    + target_priority_score
-    + range_score
-    + resource_affordability_score
-    + self_preservation_score
-    + ally_support_score
-    + objective_score
-    - discouraged_action_penalty
-```
-
-Only visible/controller-safe inputs may contribute.
-
-Initial target policies:
-
-```text
-nearest_hostile
-lowest_visible_health_hostile
-highest_visible_threat
-nearest_ally_needing_support
-lowest_visible_health_ally
-current_focus_target
-stable_first_valid
-```
-
-## 46.5 Reactions and fallback
-
-Initial reaction policies:
-
-```text
-never
-always_if_legal
-highest_score_if_legal
-protect_self
-protect_ally
-```
-
-Initial fallback policies:
-
-```text
-choose_stable_first_legal
-prefer_defend
-end_turn_or_noop
-forfeit
-controller_error
-```
-
-A controller exception/error never directly mutates state or aborts the scheduler.
-
-## 46.6 Out-of-combat baseline
-
-Before advanced AI, out-of-combat autonomy is limited to authored/simple states:
-
-```text
-idle
-follow_actor
-hold_position
-execute_schedule_step
-move_to_assigned_location
-```
-
-NPC schedules remain authoritative timeline/content data. The controller carries out legal actions required by the current schedule step; it does not invent long-term world goals.
-
-## 46.7 Decision trace
-
-For debugging/testing:
-
-```text
-NpcDecisionTrace
-    actor_id
-    controller_version
-    profile_ref
-    decision_sequence
-    visible_input_hash
-    candidate_count
-    candidate_scores[]
-    selected_action
-    selected_targets
-    reason_code
-```
-
-This trace is non-authoritative diagnostic data. Replay authority is the accepted command + domain events.
-
-## 46.8 Roadmap amendment
-
-Baseline AI arrives before advanced AI:
-
-```text
-v0.1
-    ControllerAssignment/interface seam
-
-v0.2
-    controller eligibility/event hooks
-
-v0.3
-    SimpleNpcController combat MVP
-    behavior profiles + reactions + human-vs-NPC playtests
-
-v0.5
-    perception/spatial movement integration
-
-v0.7
-    simple schedule/follow/hold/move-to-location integration
-
-v0.8
-    advanced utility/goals/memory/external/LLM controllers
-```
-
-The simple deterministic controller remains available after advanced controllers are added as the reference/fallback controller.
-
-## 46.9 Controller upgrade invariant
-
-Any future controller must preserve:
-
-1. no direct authoritative mutation;
-2. actor-permitted visible input only;
-3. normal available-action/typed command/rules validation path;
-4. explicit controller/profile versions;
-5. deterministic mode/fixtures for testing;
-6. safe failure/fallback behavior;
-7. no external-model output directly becoming game state;
-8. replaceability per actor/campaign;
-9. compatibility with event sourcing/replay;
-10. `SimpleNpcController` retained as a baseline/reference implementation.
+This workflow is the architectural proof that authoring, gameplay, operations, quality tooling, and content evolution are one coherent platform rather than disconnected subsystems.
