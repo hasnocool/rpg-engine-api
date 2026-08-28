@@ -1,6 +1,7 @@
 import asyncio
 import copy
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 
 from rpg_engine_api.domain.commands import CommandReceipt
@@ -16,7 +17,7 @@ class StreamVersionConflict(Exception):
 
 
 class InMemoryEventStore:
-    """Async append-only runtime store plus durable-style local content repositories."""
+    """Async append-only runtime store plus durable-style local repositories."""
 
     def __init__(self) -> None:
         self._events: list[DomainEvent] = []
@@ -25,6 +26,9 @@ class InMemoryEventStore:
         self._receipt_fingerprints: dict[str, str] = {}
         self._content_packs: dict[tuple[str, str], dict[str, Any]] = {}
         self._authoring_workspaces: dict[str, dict[str, Any]] = {}
+        self._outbox: dict[str, tuple[DomainEvent, str | None]] = {}
+        self._projection_checkpoints: dict[str, dict[str, Any]] = {}
+        self._snapshots: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self._subscribers: set[asyncio.Queue[DomainEvent]] = set()
         self._overflowed_subscribers: set[asyncio.Queue[DomainEvent]] = set()
@@ -45,6 +49,7 @@ class InMemoryEventStore:
                 event = raw.model_copy(update={"stream_id": stream_id, "stream_version": version, "sequence": sequence})
                 stream.append(event)
                 self._events.append(event)
+                self._outbox[event.event_id] = (event, None)
                 stored.append(event)
             subscribers = tuple(self._subscribers)
         for event in stored:
@@ -92,6 +97,31 @@ class InMemoryEventStore:
         self._receipts[key] = receipt
         if fingerprint is not None:
             self._receipt_fingerprints[key] = fingerprint
+
+    async def pending_outbox(self, *, limit: int = 1000) -> tuple[DomainEvent, ...]:
+        result = [event for event, published_at in self._outbox.values() if published_at is None]
+        return tuple(sorted(result, key=lambda event: event.sequence)[:limit])
+
+    async def mark_outbox_published(self, event_id: str, *, published_at: str | None = None) -> None:
+        event, current = self._outbox[event_id]
+        self._outbox[event_id] = (event, published_at or current or datetime.now(UTC).isoformat())
+
+    async def pending_outbox_count(self) -> int:
+        return sum(published_at is None for _, published_at in self._outbox.values())
+
+    async def save_projection_checkpoint(self, name: str, *, schema_version: str, last_sequence: int) -> None:
+        self._projection_checkpoints[name] = {"projection_name": name, "schema_version": schema_version, "last_sequence": last_sequence}
+
+    async def load_projection_checkpoint(self, name: str) -> dict[str, Any] | None:
+        value = self._projection_checkpoints.get(name)
+        return copy.deepcopy(value) if value else None
+
+    async def save_snapshot(self, stream_id: str, *, stream_version: int, schema_version: str, value: dict[str, Any]) -> None:
+        self._snapshots[stream_id] = {"stream_id": stream_id, "stream_version": stream_version, "schema_version": schema_version, "value": copy.deepcopy(value)}
+
+    async def load_snapshot(self, stream_id: str) -> dict[str, Any] | None:
+        value = self._snapshots.get(stream_id)
+        return copy.deepcopy(value) if value else None
 
     async def save_content_pack(self, value: dict[str, Any]) -> None:
         self._content_packs[(str(value["pack_id"]), str(value["version"]))] = copy.deepcopy(value)
