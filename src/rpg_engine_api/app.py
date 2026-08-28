@@ -1,7 +1,5 @@
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request
-
 from rpg_engine_api.api.advanced import router as advanced_router
 from rpg_engine_api.api.commands import router as command_router
 from rpg_engine_api.api.composition import router as composition_router
@@ -10,6 +8,7 @@ from rpg_engine_api.api.discovery import router as discovery_router
 from rpg_engine_api.api.evolution import router as evolution_router
 from rpg_engine_api.api.extensions import router as extension_router
 from rpg_engine_api.api.health import router as health_router
+from rpg_engine_api.api.intelligence import router as intelligence_router
 from rpg_engine_api.api.living_world import router as living_world_router
 from rpg_engine_api.api.observability import router as observability_router
 from rpg_engine_api.api.portable import router as portable_router
@@ -25,52 +24,18 @@ from rpg_engine_api.security.auth import LocalHeaderAuthenticationProvider
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    resolved = settings or get_settings()
-    store = PostgresEventStore(resolved.database_url) if resolved.postgres_configured and resolved.database_url else None
-    engine = ProductionReleaseEngineService(store=store)
-
+    resolved = settings or get_settings(); store = PostgresEventStore(resolved.database_url) if resolved.postgres_configured and resolved.database_url else None; engine = ProductionReleaseEngineService(store=store)
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if store is not None:
-            await engine.rebuild_from_store()
+        if store is not None: await engine.rebuild_from_store()
         app.state.recovery_complete = True
-        try:
-            yield
+        try: yield
         finally:
-            if store is not None:
-                await store.close()
-
+            if store is not None: await store.close()
     app = FastAPI(title="RPG Engine API", version="0.9.0-dev", description="Deterministic authoritative tabletop RPG simulation API", lifespan=lifespan)
-    app.state.settings = resolved
-    app.state.engine = engine
-    app.state.auth_provider = LocalHeaderAuthenticationProvider(resolved.default_principal_id)
-    app.state.rate_limiter = SlidingWindowRateLimiter(resolved.command_rate_limit_per_minute)
-    app.state.recovery_complete = store is None
-
+    app.state.settings = resolved; app.state.engine = engine; app.state.auth_provider = LocalHeaderAuthenticationProvider(resolved.default_principal_id); app.state.rate_limiter = SlidingWindowRateLimiter(resolved.command_rate_limit_per_minute); app.state.recovery_complete = store is None
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
-        request_id = request.headers.get("X-Request-Id") or new_id("req")
-        request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-Id"] = request_id
-        response.headers["X-RPG-API-Version"] = "v1"
-        return response
-
-    for router in (
-        health_router,
-        command_router,
-        query_router,
-        creator_router,
-        evolution_router,
-        advanced_router,
-        composition_router,
-        living_world_router,
-        extension_router,
-        discovery_router,
-        portable_router,
-        production_router,
-        observability_router,
-        ws_router,
-    ):
-        app.include_router(router)
+        request_id = request.headers.get("X-Request-Id") or new_id("req"); request.state.request_id = request_id; response = await call_next(request); response.headers["X-Request-Id"] = request_id; response.headers["X-RPG-API-Version"] = "v1"; return response
+    for router in (health_router, command_router, query_router, creator_router, evolution_router, advanced_router, composition_router, living_world_router, extension_router, intelligence_router, discovery_router, portable_router, production_router, observability_router, ws_router): app.include_router(router)
     return app
