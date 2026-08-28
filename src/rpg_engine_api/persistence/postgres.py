@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, UniqueConstraint, delete, func, insert, select, update
@@ -113,15 +114,57 @@ class PostgresEventStore:
             if existing is None:
                 await connection.execute(insert(command_receipts).values(idempotency_key=key, command_id=receipt.command_id, request_fingerprint=fingerprint, receipt_json=receipt.model_dump_json()))
 
-    async def save_content_pack(self, value: dict[str, Any]) -> None:
-        key = (str(value["pack_id"]), str(value["version"]))
+    async def pending_outbox(self, *, limit: int = 1000) -> tuple[DomainEvent, ...]:
+        async with self.engine.connect() as connection:
+            rows = (await connection.execute(select(outbox_events.c.payload_json).where(outbox_events.c.published_at.is_(None)).order_by(outbox_events.c.id).limit(limit))).scalars()
+            return tuple(DomainEvent.model_validate_json(value) for value in rows)
+
+    async def mark_outbox_published(self, event_id: str, *, published_at: str | None = None) -> None:
+        async with self.engine.begin() as connection:
+            await connection.execute(update(outbox_events).where(outbox_events.c.event_id == event_id).values(published_at=published_at or datetime.now(UTC).isoformat()))
+
+    async def pending_outbox_count(self) -> int:
+        async with self.engine.connect() as connection:
+            return int((await connection.scalar(select(func.count()).select_from(outbox_events).where(outbox_events.c.published_at.is_(None)))) or 0)
+
+    async def save_projection_checkpoint(self, name: str, *, schema_version: str, last_sequence: int) -> None:
+        async with self.engine.begin() as connection:
+            existing = await connection.scalar(select(projection_checkpoints.c.projection_name).where(projection_checkpoints.c.projection_name == name))
+            if existing is None:
+                await connection.execute(insert(projection_checkpoints).values(projection_name=name, schema_version=schema_version, last_sequence=last_sequence))
+            else:
+                await connection.execute(update(projection_checkpoints).where(projection_checkpoints.c.projection_name == name).values(schema_version=schema_version, last_sequence=last_sequence))
+
+    async def load_projection_checkpoint(self, name: str) -> dict[str, Any] | None:
+        async with self.engine.connect() as connection:
+            row = (await connection.execute(select(projection_checkpoints).where(projection_checkpoints.c.projection_name == name))).mappings().first()
+            return dict(row) if row else None
+
+    async def save_snapshot(self, stream_id: str, *, stream_version: int, schema_version: str, value: dict[str, Any]) -> None:
         payload = json.dumps(value, sort_keys=True, separators=(",", ":"))
         async with self.engine.begin() as connection:
-            exists = await connection.scalar(select(published_content_packs.c.pack_id).where(published_content_packs.c.pack_id == key[0], published_content_packs.c.version == key[1]))
-            if exists is None:
-                await connection.execute(insert(published_content_packs).values(pack_id=key[0], version=key[1], content_hash=str(value["content_hash"]), pack_json=payload))
+            existing = await connection.scalar(select(snapshots.c.stream_id).where(snapshots.c.stream_id == stream_id))
+            if existing is None:
+                await connection.execute(insert(snapshots).values(stream_id=stream_id, stream_version=stream_version, schema_version=schema_version, snapshot_json=payload))
             else:
-                await connection.execute(update(published_content_packs).where(published_content_packs.c.pack_id == key[0], published_content_packs.c.version == key[1]).values(content_hash=str(value["content_hash"]), pack_json=payload))
+                await connection.execute(update(snapshots).where(snapshots.c.stream_id == stream_id).values(stream_version=stream_version, schema_version=schema_version, snapshot_json=payload))
+
+    async def load_snapshot(self, stream_id: str) -> dict[str, Any] | None:
+        async with self.engine.connect() as connection:
+            row = (await connection.execute(select(snapshots).where(snapshots.c.stream_id == stream_id))).mappings().first()
+            if row is None:
+                return None
+            return {"stream_id": str(row["stream_id"]), "stream_version": int(row["stream_version"]), "schema_version": str(row["schema_version"]), "value": json.loads(str(row["snapshot_json"]))}
+
+    async def save_content_pack(self, value: dict[str, Any]) -> None:
+        pack_id, version = str(value["pack_id"]), str(value["version"])
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        async with self.engine.begin() as connection:
+            exists = await connection.scalar(select(published_content_packs.c.pack_id).where(published_content_packs.c.pack_id == pack_id, published_content_packs.c.version == version))
+            if exists is None:
+                await connection.execute(insert(published_content_packs).values(pack_id=pack_id, version=version, content_hash=str(value["content_hash"]), pack_json=payload))
+            else:
+                await connection.execute(update(published_content_packs).where(published_content_packs.c.pack_id == pack_id, published_content_packs.c.version == version).values(content_hash=str(value["content_hash"]), pack_json=payload))
 
     async def load_content_packs(self) -> tuple[dict[str, Any], ...]:
         async with self.engine.connect() as connection:
@@ -157,5 +200,5 @@ class PostgresEventStore:
 
     async def clear_for_test(self) -> None:
         async with self.engine.begin() as connection:
-            for table in (outbox_events, command_receipts, domain_events, event_streams, authoring_workspaces, published_content_packs):
+            for table in (outbox_events, command_receipts, domain_events, event_streams, snapshots, projection_checkpoints, authoring_workspaces, published_content_packs):
                 await connection.execute(delete(table))

@@ -31,10 +31,7 @@ class DurableEngineService(ProductionEngineService):
         return receipt
 
     async def _dispatch(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
-        handlers = {
-            "ScheduleCampaignEvent": self._schedule_campaign_event,
-            "CancelScheduledCampaignEvent": self._cancel_scheduled_campaign_event,
-        }
+        handlers = {"ScheduleCampaignEvent": self._schedule_campaign_event, "CancelScheduledCampaignEvent": self._cancel_scheduled_campaign_event}
         handler = handlers.get(command.command_type)
         receipt = await handler(command, principal) if handler is not None else await super()._dispatch(command, principal)
         if receipt.status == CommandStatus.ACCEPTED and command.command_type in self.AUTHORING_COMMANDS:
@@ -43,14 +40,22 @@ class DurableEngineService(ProductionEngineService):
 
     async def _start_encounter(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
         receipt = await super()._start_encounter(command, principal)
-        window_receipt = await self._persist_decision_window(command, str(receipt.result["encounter_id"]))
-        return self._merge_receipts(receipt, window_receipt)
+        return self._merge_receipts(receipt, await self._persist_decision_window(command, str(receipt.result["encounter_id"])))
 
     async def _perform_action(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
         receipt = await super()._perform_action(command, principal)
         encounter_id = str(receipt.result.get("encounter_id", command.payload.get("encounter_id", "")))
-        window_receipt = await self._persist_decision_window(command, encounter_id)
-        return self._merge_receipts(receipt, window_receipt)
+        return self._merge_receipts(receipt, await self._persist_decision_window(command, encounter_id))
+
+    async def _create_checkpoint(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
+        receipt = await super()._create_checkpoint(command, principal)
+        campaign_id = str(receipt.result["campaign_id"])
+        checkpoint_id = str(receipt.result["checkpoint_id"])
+        save_snapshot = getattr(self.store, "save_snapshot", None)
+        if save_snapshot is not None:
+            last_sequence = await self.store.last_sequence(campaign_id=campaign_id)
+            await save_snapshot(f"checkpoint:{checkpoint_id}", stream_version=last_sequence, schema_version="1.0", value=self.live_snapshot(campaign_id))
+        return receipt
 
     async def _advance_simulation_time(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
         receipt = await super()._advance_simulation_time(command, principal)
@@ -60,11 +65,7 @@ class DurableEngineService(ProductionEngineService):
         extra_versions: dict[str, int] = {}
         triggered: list[dict[str, object]] = []
         for item in timeline.consume_due_items():
-            fact = await self._record_campaign_fact(
-                command,
-                "ScheduledEventTriggered",
-                {"schedule_id": item.schedule_id, "kind": item.kind, "payload": item.payload, "simulation_time": item.simulation_time, "priority": item.priority},
-            )
+            fact = await self._record_campaign_fact(command, "ScheduledEventTriggered", {"schedule_id": item.schedule_id, "kind": item.kind, "payload": item.payload, "simulation_time": item.simulation_time, "priority": item.priority})
             extra_ids.extend(fact.emitted_event_ids)
             extra_versions.update(fact.stream_versions)
             triggered.append({"schedule_id": item.schedule_id, "kind": item.kind, "payload": item.payload})
@@ -81,14 +82,8 @@ class DurableEngineService(ProductionEngineService):
         if campaign_id not in self.campaigns:
             raise KeyError("campaign does not exist")
         timeline = self._ensure_timeline(campaign_id)
-        if command.payload.get("simulation_time") is not None:
-            simulation_time = int(command.payload["simulation_time"])
-        else:
-            simulation_time = timeline.clock.now + int(command.payload.get("delay", 0))
-        kind = str(command.payload.get("kind", "world_event"))
-        priority = int(command.payload.get("priority", 100))
-        payload = dict(command.payload.get("event_payload", {}))
-        item = timeline.clock.schedule(simulation_time, kind, payload, priority=priority)
+        simulation_time = int(command.payload["simulation_time"]) if command.payload.get("simulation_time") is not None else timeline.clock.now + int(command.payload.get("delay", 0))
+        item = timeline.clock.schedule(simulation_time, str(command.payload.get("kind", "world_event")), dict(command.payload.get("event_payload", {})), priority=int(command.payload.get("priority", 100)))
         receipt = await self._record_campaign_fact(command, "CampaignEventScheduled", {"schedule_id": item.schedule_id, "simulation_time": item.simulation_time, "kind": item.kind, "payload": item.payload, "priority": item.priority})
         return receipt.model_copy(update={"result": {**receipt.result, "schedule_id": item.schedule_id, "simulation_time": item.simulation_time, "kind": item.kind}})
 
@@ -113,11 +108,7 @@ class DurableEngineService(ProductionEngineService):
             window_id = self.encounter_window_ids.get(encounter_id)
             if window_id is not None:
                 window = timeline.windows.get(window_id)
-        return await self._record_campaign_fact(
-            command,
-            "DecisionWindowStateRecorded",
-            {"encounter_id": encounter_id, "active": bool(active and window is not None), "window": window.model_dump(mode="json") if window is not None else None},
-        )
+        return await self._record_campaign_fact(command, "DecisionWindowStateRecorded", {"encounter_id": encounter_id, "active": bool(active and window is not None), "window": window.model_dump(mode="json") if window is not None else None})
 
     @staticmethod
     def _merge_receipts(primary: CommandReceipt, extra: CommandReceipt) -> CommandReceipt:
@@ -155,8 +146,7 @@ class DurableEngineService(ProductionEngineService):
         self._restore_timeline_runtime(events)
         save_checkpoint = getattr(self.store, "save_projection_checkpoint", None)
         if save_checkpoint is not None:
-            last = events[-1].sequence if events else 0
-            await save_checkpoint("runtime", schema_version="1.0", last_sequence=last)
+            await save_checkpoint("runtime", schema_version="1.0", last_sequence=events[-1].sequence if events else 0)
 
     def _restore_timeline_runtime(self, events: tuple[Any, ...]) -> None:
         latest_windows: dict[str, dict[str, object]] = {}
@@ -168,21 +158,18 @@ class DurableEngineService(ProductionEngineService):
                 scheduled[str(event.payload["schedule_id"])] = {"campaign_id": event.campaign_id, **dict(event.payload)}
             elif event.event_type in {"CampaignEventCancelled", "ScheduledEventTriggered"}:
                 scheduled.pop(str(event.payload["schedule_id"]), None)
-
         for campaign_id, current in list(self.timelines.items()):
             replacement = TimelineRuntime(mode=current.mode, start=current.clock.now, default_decision_duration=current.default_decision_duration, timeout_policy=current.timeout_policy)
             if current.clock.paused:
                 replacement.clock.pause()
             self.timelines[campaign_id] = replacement
         self.encounter_window_ids.clear()
-
         for item in sorted(scheduled.values(), key=lambda value: (int(value["simulation_time"]), str(value["schedule_id"]))):
             campaign_id = str(item["campaign_id"])
             timeline = self._ensure_timeline(campaign_id)
             simulation_time = int(item["simulation_time"])
             if simulation_time >= timeline.clock.now:
                 timeline.clock.schedule(simulation_time, str(item["kind"]), dict(item.get("payload", {})), priority=int(item.get("priority", 100)), schedule_id=str(item["schedule_id"]))
-
         for encounter_id, encounter in sorted(self.encounters.items()):
             if encounter.status != EncounterStatus.ACTIVE:
                 continue
