@@ -18,20 +18,45 @@ REFERENCE_ARCHETYPES: dict[str, dict[str, Any]] = {
     "adept": {"label": "Adept", "max_hp": 18, "attack_bonus": 5, "defense": 12},
 }
 
+REFERENCE_SPECIES: dict[str, dict[str, Any]] = {
+    "human": {"label": "Human", "max_hp_delta": 1, "attack_bonus_delta": 0, "defense_delta": 0},
+    "elf": {"label": "Elf", "max_hp_delta": 0, "attack_bonus_delta": 1, "defense_delta": 0},
+    "dwarf": {"label": "Dwarf", "max_hp_delta": 2, "attack_bonus_delta": 0, "defense_delta": 1},
+    "halfling": {"label": "Halfling", "max_hp_delta": 0, "attack_bonus_delta": 0, "defense_delta": 1},
+}
+
+REFERENCE_BACKGROUNDS: dict[str, dict[str, Any]] = {
+    "wanderer": {"label": "Wanderer", "feature": "trailwise", "item": "traveler_pack"},
+    "soldier": {"label": "Soldier", "feature": "martial_training", "item": "field_kit"},
+    "scholar": {"label": "Scholar", "feature": "lore_training", "item": "reference_notes"},
+    "artisan": {"label": "Artisan", "feature": "craft_training", "item": "artisan_tools"},
+}
+
 
 def character_creation_schema() -> dict[str, Any]:
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "steps": [
             {"id": "name", "type": "text", "required": True},
             {
                 "id": "archetype",
                 "type": "single_choice",
                 "required": True,
-                "options": [
-                    {"id": key, "label": value["label"]}
-                    for key, value in sorted(REFERENCE_ARCHETYPES.items())
-                ],
+                "options": [{"id": key, "label": value["label"]} for key, value in sorted(REFERENCE_ARCHETYPES.items())],
+            },
+            {
+                "id": "species",
+                "type": "single_choice",
+                "required": False,
+                "default": "human",
+                "options": [{"id": key, "label": value["label"]} for key, value in sorted(REFERENCE_SPECIES.items())],
+            },
+            {
+                "id": "background",
+                "type": "single_choice",
+                "required": False,
+                "default": "wanderer",
+                "options": [{"id": key, "label": value["label"]} for key, value in sorted(REFERENCE_BACKGROUNDS.items())],
             },
             {"id": "finalize", "type": "finalize", "required": True},
         ],
@@ -39,13 +64,15 @@ def character_creation_schema() -> dict[str, Any]:
 
 
 class CharacterCreationSession(BaseModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     creation_id: str
     campaign_id: str
     principal_id: str
     status: CharacterCreationStatus = CharacterCreationStatus.DRAFT
     name: str | None = None
     archetype: str | None = None
+    species: str | None = None
+    background: str | None = None
     actor_id: str | None = None
     stream_version: int = 0
     errors: list[str] = Field(default_factory=list)
@@ -55,9 +82,7 @@ class CharacterCreationSession(BaseModel):
         return bool(self.name and self.archetype in REFERENCE_ARCHETYPES)
 
 
-def reduce_character_creation(
-    state: CharacterCreationSession | None, event: DomainEvent
-) -> CharacterCreationSession:
+def reduce_character_creation(state: CharacterCreationSession | None, event: DomainEvent) -> CharacterCreationSession:
     if event.event_type == "CharacterCreationStarted":
         return CharacterCreationSession(
             creation_id=str(event.payload["creation_id"]),
@@ -73,7 +98,13 @@ def reduce_character_creation(
         next_state.name = str(event.payload["name"])
     elif event.event_type == "CharacterArchetypeSelected":
         next_state.archetype = str(event.payload["archetype"])
+    elif event.event_type == "CharacterSpeciesSelected":
+        next_state.species = str(event.payload["species"])
+    elif event.event_type == "CharacterBackgroundSelected":
+        next_state.background = str(event.payload["background"])
     elif event.event_type == "CharacterCreationFinalized":
         next_state.status = CharacterCreationStatus.FINALIZED
         next_state.actor_id = str(event.payload["actor_id"])
+        next_state.species = str(event.payload.get("species") or next_state.species or "human")
+        next_state.background = str(event.payload.get("background") or next_state.background or "wanderer")
     return next_state

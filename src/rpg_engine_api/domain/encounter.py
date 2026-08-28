@@ -57,19 +57,8 @@ class EncounterState(BaseModel):
 
 def reduce_encounter(state: EncounterState | None, event: DomainEvent) -> EncounterState:
     if event.event_type == "EncounterStarted":
-        participants = {
-            item["actor_id"]: EncounterantState.model_validate(item)
-            for item in event.payload["participants"]
-        }
-        return EncounterState(
-            encounter_id=str(event.payload["encounter_id"]),
-            campaign_id=event.campaign_id,
-            participants=participants,
-            turn_order=list(event.payload["turn_order"]),
-            turn_index=0,
-            round=1,
-            stream_version=event.stream_version,
-        )
+        participants = {item["actor_id"]: EncounterantState.model_validate(item) for item in event.payload["participants"]}
+        return EncounterState(encounter_id=str(event.payload["encounter_id"]), campaign_id=event.campaign_id, participants=participants, turn_order=list(event.payload["turn_order"]), turn_index=0, round=1, stream_version=event.stream_version)
     if state is None:
         raise ValueError("encounter stream must start with EncounterStarted")
     next_state = state.model_copy(deep=True)
@@ -91,6 +80,9 @@ def reduce_encounter(state: EncounterState | None, event: DomainEvent) -> Encoun
     elif event.event_type == "HealingApplied":
         target = next_state.participants[str(event.payload["target_id"])]
         target.hp = min(target.max_hp, int(event.payload["target_hp"]))
+        source_id = str(event.payload.get("source_actor_id", event.payload["target_id"]))
+        if source_id in next_state.participants and "source_stamina" in event.payload:
+            next_state.participants[source_id].stamina = int(event.payload["source_stamina"])
     elif event.event_type == "ConditionApplied":
         target = next_state.participants[str(event.payload["target_id"])]
         condition_id = str(event.payload["condition_id"])
