@@ -19,6 +19,9 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str) -> None:
         await websocket.close(code=4403, reason="forbidden")
         return
     await websocket.accept()
+    metrics = getattr(engine, "metrics", None)
+    if metrics is not None:
+        metrics.websocket_connected()
     queue = engine.store.subscribe(maxsize=256)
     send_lock = asyncio.Lock()
     last_sent = 0
@@ -30,6 +33,8 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str) -> None:
     async def send_backlog(after_sequence: int) -> int:
         current = await engine.store.last_sequence(campaign_id=campaign_id)
         if current - after_sequence > 1000:
+            if metrics is not None:
+                metrics.websocket_resync()
             await send_json({"type": "server.resync_required", "campaign_id": campaign_id, "last_sequence": current, "reason": "resume_window_exceeded"})
             return current
         events = await engine.store.read_after(after_sequence, campaign_id=campaign_id, limit=1000)
@@ -52,6 +57,8 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str) -> None:
         while True:
             if engine.store.subscription_overflowed(queue):
                 current = await engine.store.last_sequence(campaign_id=campaign_id)
+                if metrics is not None:
+                    metrics.websocket_resync()
                 await send_json({"type": "server.resync_required", "campaign_id": campaign_id, "last_sequence": current, "reason": "subscriber_backpressure"})
                 await websocket.close(code=1013, reason="subscriber fell behind")
                 return
@@ -90,3 +97,5 @@ async def campaign_ws(websocket: WebSocket, campaign_id: str) -> None:
         with suppress(asyncio.CancelledError):
             await sender
         engine.store.unsubscribe(queue)
+        if metrics is not None:
+            metrics.websocket_disconnected()
