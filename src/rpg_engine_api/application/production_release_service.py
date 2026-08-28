@@ -37,6 +37,27 @@ class ProductionReleaseEngineService(IntelligentExtensionEngineService):
         if command.command_type == "ImportCharacterPackage": return await self._import_character_package(command, principal)
         return await super()._dispatch(command, principal)
 
+    def _replay_rng_event(self, event: Any) -> None:
+        """Replay specialized ability/healing RNG evidence before falling back to generic rules."""
+        rng = self._rng.get(event.campaign_id)
+        if rng is None:
+            return super()._replay_rng_event(event)
+        payload = event.payload
+        ability_id = str(payload.get("ability_id", ""))
+        if event.event_type == "RangedAttackResolved" and ability_id in {"arcane_bolt", "radiant_bolt"}:
+            rng.replay_roll("1d20", payload.get("attack_roll", ()), stream="dice", expected_sequence=int(payload["attack_rng_sequence"]) if payload.get("attack_rng_sequence") is not None else None)
+            if payload.get("hit") and payload.get("damage_roll"):
+                expression = "1d6+2" if ability_id == "arcane_bolt" else "1d6+1"
+                rng.replay_roll(expression, payload["damage_roll"], stream="dice", expected_sequence=int(payload["damage_rng_sequence"]) if payload.get("damage_rng_sequence") is not None else None)
+            return
+        if event.event_type == "HealingApplied" and payload.get("rolls"):
+            if ability_id == "healing_prayer": expression = "1d6+2"
+            elif str(payload.get("source_actor_id", "")) == str(payload.get("target_id", "")): expression = "1d4+2"
+            else: expression = "1d4+1"
+            rng.replay_roll(expression, payload["rolls"], stream="dice", expected_sequence=int(payload["rng_sequence"]) if payload.get("rng_sequence") is not None else None)
+            return
+        super()._replay_rng_event(event)
+
     async def _dry_run_content_revision(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
         receipt = await super()._dry_run_content_revision(command, principal); proposal_id = str(command.payload.get("proposal_id", "")); success = False
         try:
@@ -88,4 +109,4 @@ class ProductionReleaseEngineService(IntelligentExtensionEngineService):
 
     @classmethod
     def capability_projection(cls) -> dict[str, Any]:
-        base = super().capability_projection(); data = dict(base["data"]); data["features"] = list(data.get("features", [])) + ["admin_audit_log", "portable_campaign_package", "portable_character_package", "data_only_import_validation", "isolated_migration_sandbox"]; return {"data": data, "meta": {"schema_version": "1.9"}}
+        base = super().capability_projection(); data = dict(base["data"]); data["features"] = list(data.get("features", [])) + ["admin_audit_log", "portable_campaign_package", "portable_character_package", "data_only_import_validation", "isolated_migration_sandbox", "ability_rng_replay"] ; return {"data": data, "meta": {"schema_version": "1.10"}}
