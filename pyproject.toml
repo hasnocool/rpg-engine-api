@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rpg-engine-api"
-version = "0.1.0.dev0"
+version = "0.9.0.dev0"
 description = "Headless deterministic event-driven tabletop RPG simulation API"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -34,6 +34,7 @@ dev = [
 
 [project.scripts]
 rpg-engine-api = "rpg_engine_api.__main__:main"
+rpg-engine = "rpg_engine_api.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rpg_engine_api"]
