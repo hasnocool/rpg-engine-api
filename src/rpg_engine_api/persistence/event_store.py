@@ -1,5 +1,7 @@
 import asyncio
+import copy
 from collections.abc import Iterable
+from typing import Any
 
 from rpg_engine_api.domain.commands import CommandReceipt
 from rpg_engine_api.domain.events import DomainEvent
@@ -14,13 +16,15 @@ class StreamVersionConflict(Exception):
 
 
 class InMemoryEventStore:
-    """Async append-only runtime store with optimistic concurrency and resumable subscriptions."""
+    """Async append-only runtime store plus durable-style local content repositories."""
 
     def __init__(self) -> None:
         self._events: list[DomainEvent] = []
         self._streams: dict[str, list[DomainEvent]] = {}
         self._receipts: dict[str, CommandReceipt] = {}
         self._receipt_fingerprints: dict[str, str] = {}
+        self._content_packs: dict[tuple[str, str], dict[str, Any]] = {}
+        self._authoring_workspaces: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self._subscribers: set[asyncio.Queue[DomainEvent]] = set()
         self._overflowed_subscribers: set[asyncio.Queue[DomainEvent]] = set()
@@ -60,16 +64,14 @@ class InMemoryEventStore:
         return tuple(self._events)
 
     async def read_after(self, sequence: int, *, campaign_id: str | None = None, limit: int = 1000) -> tuple[DomainEvent, ...]:
-        if sequence < 0:
-            raise ValueError("sequence must be non-negative")
-        if limit <= 0:
-            raise ValueError("limit must be positive")
-        values = (event for event in self._events if event.sequence > sequence and (campaign_id is None or event.campaign_id == campaign_id))
+        if sequence < 0 or limit <= 0:
+            raise ValueError("sequence must be non-negative and limit positive")
         result: list[DomainEvent] = []
-        for event in values:
-            result.append(event)
-            if len(result) >= limit:
-                break
+        for event in self._events:
+            if event.sequence > sequence and (campaign_id is None or event.campaign_id == campaign_id):
+                result.append(event)
+                if len(result) >= limit:
+                    break
         return tuple(result)
 
     async def last_sequence(self, *, campaign_id: str | None = None) -> int:
@@ -90,6 +92,18 @@ class InMemoryEventStore:
         self._receipts[key] = receipt
         if fingerprint is not None:
             self._receipt_fingerprints[key] = fingerprint
+
+    async def save_content_pack(self, value: dict[str, Any]) -> None:
+        self._content_packs[(str(value["pack_id"]), str(value["version"]))] = copy.deepcopy(value)
+
+    async def load_content_packs(self) -> tuple[dict[str, Any], ...]:
+        return tuple(copy.deepcopy(self._content_packs[key]) for key in sorted(self._content_packs))
+
+    async def save_authoring_workspace(self, value: dict[str, Any]) -> None:
+        self._authoring_workspaces[str(value["workspace_id"])] = copy.deepcopy(value)
+
+    async def load_authoring_workspaces(self) -> tuple[dict[str, Any], ...]:
+        return tuple(copy.deepcopy(self._authoring_workspaces[key]) for key in sorted(self._authoring_workspaces))
 
     def subscribe(self, *, maxsize: int = 256) -> asyncio.Queue[DomainEvent]:
         queue: asyncio.Queue[DomainEvent] = asyncio.Queue(maxsize=maxsize)

@@ -1,5 +1,7 @@
 import asyncio
+import json
 from collections.abc import Iterable
+from typing import Any
 
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, UniqueConstraint, delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -15,11 +17,11 @@ command_receipts = Table("command_receipts", metadata, Column("idempotency_key",
 snapshots = Table("snapshots", metadata, Column("stream_id", String(255), primary_key=True), Column("stream_version", Integer, nullable=False), Column("schema_version", String(32), nullable=False), Column("snapshot_json", Text, nullable=False))
 projection_checkpoints = Table("projection_checkpoints", metadata, Column("projection_name", String(255), primary_key=True), Column("schema_version", String(32), nullable=False), Column("last_sequence", BigInteger, nullable=False))
 outbox_events = Table("outbox_events", metadata, Column("id", BigInteger, primary_key=True, autoincrement=True), Column("event_id", String(128), nullable=False, unique=True), Column("payload_json", Text, nullable=False), Column("published_at", String(64), nullable=True))
+published_content_packs = Table("published_content_packs", metadata, Column("pack_id", String(255), primary_key=True), Column("version", String(64), primary_key=True), Column("content_hash", String(64), nullable=False), Column("pack_json", Text, nullable=False))
+authoring_workspaces = Table("authoring_workspaces", metadata, Column("workspace_id", String(255), primary_key=True), Column("owner_id", String(255), nullable=False, index=True), Column("status", String(32), nullable=False), Column("workspace_json", Text, nullable=False))
 
 
 class PostgresEventStore:
-    """Async PostgreSQL event store with same-process live subscriptions."""
-
     def __init__(self, database_url: str) -> None:
         self.engine: AsyncEngine = create_async_engine(database_url, pool_pre_ping=True)
         self._subscribers: set[asyncio.Queue[DomainEvent]] = set()
@@ -34,8 +36,7 @@ class PostgresEventStore:
 
     async def current_version(self, stream_id: str) -> int:
         async with self.engine.connect() as connection:
-            value = await connection.scalar(select(event_streams.c.version).where(event_streams.c.stream_id == stream_id))
-            return int(value or 0)
+            return int((await connection.scalar(select(event_streams.c.version).where(event_streams.c.stream_id == stream_id))) or 0)
 
     async def append(self, stream_id: str, expected_version: int, events: Iterable[DomainEvent]) -> tuple[DomainEvent, ...]:
         pending = tuple(events)
@@ -55,16 +56,14 @@ class PostgresEventStore:
             for raw in pending:
                 version += 1
                 provisional = raw.model_copy(update={"stream_id": stream_id, "stream_version": version})
-                result = await connection.execute(insert(domain_events).values(event_id=provisional.event_id, stream_id=stream_id, stream_version=version, campaign_id=provisional.campaign_id, event_type=provisional.event_type, event_json=provisional.model_dump_json()).returning(domain_events.c.sequence))
-                sequence = int(result.scalar_one())
+                sequence = int((await connection.execute(insert(domain_events).values(event_id=provisional.event_id, stream_id=stream_id, stream_version=version, campaign_id=provisional.campaign_id, event_type=provisional.event_type, event_json=provisional.model_dump_json()).returning(domain_events.c.sequence))).scalar_one())
                 event = provisional.model_copy(update={"sequence": sequence})
                 await connection.execute(update(domain_events).where(domain_events.c.event_id == event.event_id).values(event_json=event.model_dump_json()))
                 await connection.execute(insert(outbox_events).values(event_id=event.event_id, payload_json=event.model_dump_json()))
                 stored.append(event)
             await connection.execute(update(event_streams).where(event_streams.c.stream_id == stream_id).values(version=version))
-        subscribers = tuple(self._subscribers)
         for event in stored:
-            for queue in subscribers:
+            for queue in tuple(self._subscribers):
                 if queue in self._overflowed_subscribers:
                     continue
                 try:
@@ -87,9 +86,8 @@ class PostgresEventStore:
         statement = select(domain_events.c.event_json).where(domain_events.c.sequence > sequence)
         if campaign_id is not None:
             statement = statement.where(domain_events.c.campaign_id == campaign_id)
-        statement = statement.order_by(domain_events.c.sequence).limit(limit)
         async with self.engine.connect() as connection:
-            rows = (await connection.execute(statement)).scalars()
+            rows = (await connection.execute(statement.order_by(domain_events.c.sequence).limit(limit))).scalars()
             return tuple(DomainEvent.model_validate_json(value) for value in rows)
 
     async def last_sequence(self, *, campaign_id: str | None = None) -> int:
@@ -97,8 +95,7 @@ class PostgresEventStore:
         if campaign_id is not None:
             statement = statement.where(domain_events.c.campaign_id == campaign_id)
         async with self.engine.connect() as connection:
-            value = await connection.scalar(statement)
-            return int(value or 0)
+            return int((await connection.scalar(statement)) or 0)
 
     async def get_receipt(self, key: str) -> CommandReceipt | None:
         async with self.engine.connect() as connection:
@@ -116,6 +113,36 @@ class PostgresEventStore:
             if existing is None:
                 await connection.execute(insert(command_receipts).values(idempotency_key=key, command_id=receipt.command_id, request_fingerprint=fingerprint, receipt_json=receipt.model_dump_json()))
 
+    async def save_content_pack(self, value: dict[str, Any]) -> None:
+        key = (str(value["pack_id"]), str(value["version"]))
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        async with self.engine.begin() as connection:
+            exists = await connection.scalar(select(published_content_packs.c.pack_id).where(published_content_packs.c.pack_id == key[0], published_content_packs.c.version == key[1]))
+            if exists is None:
+                await connection.execute(insert(published_content_packs).values(pack_id=key[0], version=key[1], content_hash=str(value["content_hash"]), pack_json=payload))
+            else:
+                await connection.execute(update(published_content_packs).where(published_content_packs.c.pack_id == key[0], published_content_packs.c.version == key[1]).values(content_hash=str(value["content_hash"]), pack_json=payload))
+
+    async def load_content_packs(self) -> tuple[dict[str, Any], ...]:
+        async with self.engine.connect() as connection:
+            rows = (await connection.execute(select(published_content_packs.c.pack_json).order_by(published_content_packs.c.pack_id, published_content_packs.c.version))).scalars()
+            return tuple(json.loads(value) for value in rows)
+
+    async def save_authoring_workspace(self, value: dict[str, Any]) -> None:
+        workspace_id = str(value["workspace_id"])
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        async with self.engine.begin() as connection:
+            exists = await connection.scalar(select(authoring_workspaces.c.workspace_id).where(authoring_workspaces.c.workspace_id == workspace_id))
+            if exists is None:
+                await connection.execute(insert(authoring_workspaces).values(workspace_id=workspace_id, owner_id=str(value["owner_id"]), status=str(value["status"]), workspace_json=payload))
+            else:
+                await connection.execute(update(authoring_workspaces).where(authoring_workspaces.c.workspace_id == workspace_id).values(owner_id=str(value["owner_id"]), status=str(value["status"]), workspace_json=payload))
+
+    async def load_authoring_workspaces(self) -> tuple[dict[str, Any], ...]:
+        async with self.engine.connect() as connection:
+            rows = (await connection.execute(select(authoring_workspaces.c.workspace_json).order_by(authoring_workspaces.c.workspace_id))).scalars()
+            return tuple(json.loads(value) for value in rows)
+
     def subscribe(self, *, maxsize: int = 256) -> asyncio.Queue[DomainEvent]:
         queue: asyncio.Queue[DomainEvent] = asyncio.Queue(maxsize=maxsize)
         self._subscribers.add(queue)
@@ -130,5 +157,5 @@ class PostgresEventStore:
 
     async def clear_for_test(self) -> None:
         async with self.engine.begin() as connection:
-            for table in (outbox_events, command_receipts, domain_events, event_streams):
+            for table in (outbox_events, command_receipts, domain_events, event_streams, authoring_workspaces, published_content_packs):
                 await connection.execute(delete(table))
