@@ -811,6 +811,7 @@ Create the smallest authoritative engine capable of typed commands -> reproducib
 - playtest harness skeleton, seed/transcript/artifact/coverage schemas;
 - `TestEvidenceBundle`/suite/environment schemas;
 - canonical local test-profile runner/manifest seam with at least `smoke` and `pr` foundations;
+- programmatic `scripts/test-all` wrapper for full canonical profile sweeps against local PostgreSQL;
 - machine-readable JUnit/evidence artifact output;
 - ContentQualityReport/CompatibilityReport schema seams;
 - Testing Grounds fixture skeleton;
@@ -819,7 +820,7 @@ Create the smallest authoritative engine capable of typed commands -> reproducib
 
 ### Exit criteria
 
-The minimal public command path is deterministic/replayable; an actor can carry a versioned controller assignment; published definitions and trusted-extension metadata have stable version seams; the playtest/quality artifact foundations exist without later architecture rewrites; a local executor can run the initial canonical profile for an exact commit and produce machine-readable evidence without remote agents fabricating execution claims; and TODO P0/P1 are demonstrated rather than merely coded.
+The minimal public command path is deterministic/replayable; an actor can carry a versioned controller assignment; published definitions and trusted-extension metadata have stable version seams; the playtest/quality artifact foundations exist without later architecture rewrites; a local executor can run the initial canonical profile for an exact commit and the full canonical profile sweep programmatically; and TODO P0/P1 are demonstrated rather than merely coded.
 
 ---
 

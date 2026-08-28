@@ -19,6 +19,7 @@ python -m pip install -e '.[dev]'
 ./scripts/test smoke
 ./scripts/test pr
 ./scripts/test simulation
+./scripts/test-all
 ```
 
 Each profile should emit a commit-bound `TestEvidenceBundle` under `artifacts/test-evidence/`.
@@ -38,6 +39,7 @@ Then run:
 ./scripts/test migration
 ./scripts/test replay
 ./scripts/test full
+./scripts/test-all
 ```
 
 ## 4. Exercise the game-like Testing Grounds example

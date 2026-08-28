@@ -213,6 +213,7 @@ Goal: establish a clean modern Python project, deterministic core contracts, loc
 ## A2. Canonical local test runner and evidence
 
 - [ ] Create `scripts/test` as the single canonical local test entry point.
+- [ ] Add `scripts/test-all` as a local wrapper that runs the canonical profile sweep programmatically.
 - [ ] Implement named profiles: `smoke`, `pr`, `unit`, `integration`, `playtest`, `simulation`, `migration`, `replay`, `performance`, `full`, `nightly`, `release`.
 - [ ] Define a machine-readable test-profile manifest mapping each profile to required suites.
 - [ ] Implement `TestEvidenceBundle` schema from `docs/testing/LOCAL_TEST_AGENT.md`.

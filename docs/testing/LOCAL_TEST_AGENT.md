@@ -213,6 +213,8 @@ The entry point must:
 5. generate machine-readable evidence;
 6. return non-zero when required gates fail.
 
+For convenience, the repository may also provide `./scripts/test-all` as a local orchestration wrapper that runs the canonical profiles sequentially and still emits the same local evidence artifacts.
+
 Agents must not silently replace the canonical local profile with a shorter hand-picked command while claiming the canonical profile passed.
 
 ---

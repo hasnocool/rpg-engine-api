@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+if [ "$#" -gt 0 ]; then
+  profiles=("$@")
+else
+  profiles=(smoke pr unit integration playtest replay simulation migration performance full nightly release)
+fi
+
+cleanup() {
+  "$ROOT/scripts/local-env" down >/dev/null 2>&1 || true
+}
+
+trap cleanup EXIT
+
+"$ROOT/scripts/local-env" up
+export RPG_ENGINE_DATABASE_URL="${RPG_ENGINE_DATABASE_URL:-postgresql+asyncpg://rpg:rpg@127.0.0.1:5432/rpg_engine}"
+
+if command -v alembic >/dev/null 2>&1; then
+  alembic upgrade head
+else
+  python -m alembic upgrade head
+fi
+
+for profile in "${profiles[@]}"; do
+  printf '\n==> Running %s\n' "$profile"
+  "$ROOT/scripts/test" "$profile"
+done
