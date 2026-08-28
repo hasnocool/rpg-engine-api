@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rpg-engine-api"
+version = "0.1.0.dev0"
+description = "Headless deterministic event-driven tabletop RPG simulation API"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [{name = "rpg-engine-api contributors"}]
+dependencies = [
+  "fastapi>=0.116,<1",
+  "uvicorn[standard]>=0.35,<1",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "sqlalchemy[asyncio]>=2.0.40,<3",
+  "asyncpg>=0.30,<1",
+  "alembic>=1.16,<2",
+  "httpx>=0.28,<1",
+  "websockets>=15,<16",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "pytest-cov>=6.2,<7",
+  "hypothesis>=6.138,<7",
+  "ruff>=0.12,<1",
+  "mypy>=1.17,<2",
+]
+
+[project.scripts]
+rpg-engine-api = "rpg_engine_api.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rpg_engine_api"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "integration: requires configured external services",
+  "playtest: black-box public-interface playtest",
+  "simulation: deterministic simulation tests",
+  "replay: deterministic replay tests",
+  "migration: migration/upcaster tests",
+  "performance: performance checks",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+packages = ["rpg_engine_api"]

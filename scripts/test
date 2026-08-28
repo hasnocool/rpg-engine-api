@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+PROFILE="${1:-pr}"
+shift || true
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+exec python -m rpg_engine_api.testing.runner "$PROFILE" "$@"

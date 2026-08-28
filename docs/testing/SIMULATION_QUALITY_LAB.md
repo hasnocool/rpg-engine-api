@@ -1,495 +1,391 @@
-# Simulation, Balance, and Content Quality Lab Specification
+# Simulation and Content Quality Lab
 
 ## Status
 
 **Project:** `rpg-engine-api`  
-**Role:** Normative specification for automated encounter simulation, balance evidence, content validation/testing SDKs, generated play, reachability analysis, and creator-facing quality reports.
+**Role:** Normative specification for deterministic simulation, balance evidence, content reachability, content-quality analysis, and creator-facing testing SDKs.  
+**Execution policy:** simulation/quality profiles are executed by the designated local test agent only. GitHub Actions and remote CI are prohibited by `PLAN.md` Section 50.
 
-This specification builds on `docs/testing/HUMAN_PLAYTESTING.md` and `docs/ai/SIMPLE_NPC_AI.md`.
+`PLAN.md` remains authoritative. Simulation is never a second simplified game engine: it drives the same rules runtime, command/event paths, controllers, timing and content definitions used by normal gameplay.
 
 ---
 
-# 1. Purpose
+# 1. Goals
 
-The engine should not merely execute games; it should be able to systematically test authored content and gameplay combinations before a human encounters them.
-
-The Simulation/Quality Lab provides evidence, not an automatic declaration that content is “fun” or “balanced.”
-
-It should answer questions such as:
+The lab exists to answer questions such as:
 
 ```text
 Can this encounter finish?
-How often does each side win under configured policies?
-Which actions are never used?
-Which resources are exhausted most often?
-Which seed caused an extreme outcome?
-Can every quest branch be reached?
-Are any dialogue nodes unreachable?
-Can every progression node ever become legal?
-Can every required quest item be acquired?
-Can a creature use all abilities it was authored with?
-Does this campaign deadlock under a timing/controller combination?
+How often does each side win under controlled assumptions?
+Which actions/resources dominate outcomes?
+Can this quest/dialogue/progression graph be completed?
+Is an item unobtainable?
+Is an ability never legally usable?
+Does a content/controller revision materially change outcomes?
+Can a reported outlier be reproduced from its seed/configuration?
 ```
+
+The lab provides evidence. It must not hide creator judgement behind one opaque universal “balance score.”
 
 ---
 
-# 2. Simulation run model
+# 2. Reuse the real runtime
+
+A simulation must instantiate and drive production-equivalent domain/runtime components.
+
+```text
+published or preview content
+    -> campaign/encounter fixture
+    -> ordinary command/action engine
+    -> real rules/effects/resources
+    -> real controller interface
+    -> authoritative events/projections
+    -> isolated simulation report
+```
+
+Do not create a lightweight combat formula that bypasses the actual engine merely to make large batches faster. Performance optimization may introduce isolated workers/caching, but semantic authority remains the same runtime.
+
+---
+
+# 3. Simulation run identity
+
+Every run is reproducible from versioned inputs.
 
 ```text
 SimulationRun
-    id
-    scenario_ref
+    schema_version
+    simulation_id
     engine_revision
     ruleset_ref
-    content_lock_ref
+    content_lock
+    extension_versions
+    controller_versions
+    scenario_ref
+    configuration
     seed_bundle
-    controller_assignments[]
-    timing_mode
-    spatial_adapter
-    run_policy
-    status
-    started_at
-    completed_at | null
-    result_ref | null
+    iteration_count
+    created_at
 ```
 
-Statuses:
-
-```text
-queued
-running
-completed
-failed
-cancelled
-```
-
-Simulation jobs are operational workloads. They do not modify production campaigns.
-
-## 2.1 Simulation batch
-
-```text
-SimulationBatch
-    id
-    scenario_template_ref
-    sample_count
-    seed_policy
-    controller_matrix[]
-    timing_mode_matrix[]
-    parameter_sweep
-    stop_conditions
-```
-
-Initial batches should support deterministic sequential seed allocation so any run is reproducible independently.
+The local test evidence bundle should reference the simulation report/artifacts produced for the exact candidate commit.
 
 ---
 
-# 3. Encounter simulation
+# 4. Encounter simulation
 
-An encounter simulation uses the same runtime/rules/action/controller machinery as real gameplay.
+Support deterministic single and batch encounter simulation.
 
-Typical modes:
-
-```text
-simple_npc_vs_simple_npc
-scripted_reference_party_vs_simple_npc
-mixed_persona_vs_simple_npc
-controller_profile_comparison
-rules/content-version comparison
-```
-
-The lab must not contain a second combat simulator with simplified hidden formulas.
-
-## 3.1 Encounter metrics
-
-Capture at minimum:
+Metrics should include where applicable:
 
 ```text
-terminal outcome
-winner/side outcome where applicable
-simulation duration
-round/turn/action count
-wall-test execution duration
-damage/healing totals
+winner/outcome
+objective completion
+rounds/turns/simulation time
+real execution duration
+damage dealt/taken
+healing
 resource consumption
-resource remaining
-movement distance/actions
-action usage counts
-ability usage counts
-condition/effect applications
-reaction opportunities/uses
-actor defeat/unavailable sequence
-objective completion/failure
-rewards produced
-rule rejection counts
-controller fallback counts
+conditions/effects applied
+action selection counts
+target selection counts
+actor defeats
+remaining health/resources
+controller fallback/error counts
 ```
 
-For each metric retain run IDs/seeds for outlier inspection.
-
-## 3.2 Aggregate report
-
-```text
-EncounterSimulationReport
-    sample_count
-    completed_count
-    failed_count
-    outcome_distribution
-    duration_distribution
-    action_usage
-    resource_statistics
-    actor_contribution_statistics
-    objective_statistics
-    rejection_statistics
-    controller_statistics
-    outlier_runs[]
-    warnings[]
-```
-
-Use descriptive evidence rather than a single opaque “balance score.”
+Metrics are descriptive evidence. Balance thresholds must be explicit creator/project policy, not hidden magic numbers.
 
 ---
 
-# 4. Comparative experiments
+# 5. Matched-seed comparisons
 
-Creators should be able to compare two or more versions/configurations.
+When comparing two content/controller/runtime revisions, run equivalent seed/configuration sets where possible.
 
 Examples:
 
 ```text
-encounter v1 vs v2
-creature profile aggressive vs defensive
-party size 3 vs 4
-ruleset patch A vs B
-item/ability before vs after edit
-turn_based vs active_time
+encounter v1 vs encounter v2
+SimpleNpcController profile A vs B
+old ability definition vs revised definition
+old rules extension vs new version
+turn-based translation vs active-time translation
 ```
 
-```text
-SimulationComparison
-    baseline_batch_ref
-    candidate_batch_ref
-    matched_seed_policy
-    metric_deltas
-    significance_metadata
-    warnings
-```
-
-Matched seeds should be preferred when comparing deterministic content revisions so variance is easier to interpret.
-
-The lab may calculate confidence intervals/statistics, but the underlying sample/run data must remain inspectable.
+Matched seeds make outcome deltas easier to interpret and reproduce.
 
 ---
 
-# 5. Reachability and graph analysis
+# 6. Outlier preservation
 
-Some quality problems can be detected statically or through bounded exploration.
+Keep enough information to reproduce interesting or failing runs.
 
-## 5.1 Quest graph checks
+Examples:
 
-Detect:
+- unexpectedly one-sided result;
+- extreme duration;
+- resource starvation;
+- controller fallback loop;
+- unreachable victory condition;
+- nondeterministic mismatch;
+- performance spike.
 
-- unreachable objective nodes;
-- objectives whose prerequisites can never coexist;
-- dead-end states with no completion/failure resolution;
-- cycles without explicit repeat policy;
-- required item/fact/location references with no acquisition/discovery path in supplied content scope;
-- timed objectives with impossible schedule relationships when provable.
+Promote important seeds/configurations into durable regression fixtures.
 
-## 5.2 Dialogue graph checks
+---
 
-Detect:
+# 7. Static/reachability content analysis
+
+Quality analysis should inspect authored/published graphs without needing to brute-force every game state.
+
+Targets include:
+
+```text
+quest graphs
+dialogue graphs
+progression graphs
+campaign creation graphs
+character creation graphs
+encounter objective graphs
+content dependencies
+item acquisition paths
+ability prerequisites
+crafting dependencies
+```
+
+Detect where practical:
 
 - unreachable nodes;
-- transitions to missing nodes;
-- choices whose requirements are impossible under declared fixtures;
-- terminal nodes missing an explicit terminal policy;
-- accidental infinite loops where repeat is not intentional.
+- dead-end mandatory branches;
+- impossible prerequisite combinations;
+- circular dependencies;
+- dangling definition refs;
+- content with no acquisition path;
+- abilities that can never become legally available;
+- mutually exclusive requirements that accidentally block completion.
 
-## 5.3 Progression graph checks
-
-Detect:
-
-- unreachable nodes;
-- impossible prerequisites;
-- mutually exclusive prerequisites that make a node impossible;
-- ranks with no acquisition path;
-- circular prerequisites;
-- orphan grants/references.
-
-## 5.4 World/content path checks
-
-Where enough authored data exists, detect:
-
-- location graph components with no intended entry path;
-- quest-critical items with no source;
-- encounter templates referencing impossible spawn locations;
-- vendors/recipes referencing absent currencies/items;
-- abilities whose prerequisites can never be satisfied by their intended actor/class template.
-
-Static analysis should report uncertainty rather than claiming impossibility when dynamic/custom predicates prevent proof.
+Static analysis is advisory when runtime conditions are intentionally dynamic/opaque.
 
 ---
 
-# 6. Content Testing SDK
+# 8. Generated available-action exploration
 
-Provide a Python-facing testing SDK for creators, ruleset authors, CI, and agents.
-
-Conceptual usage:
+Use server/runtime-advertised available actions to explore state without duplicating hidden rules.
 
 ```text
-validate_definition(...)
-validate_pack(...)
-instantiate_creature(...)
-instantiate_encounter(...)
-run_playtest_scenario(...)
-simulate_encounter(...)
-simulate_batch(...)
-compare_batches(...)
-check_quest_reachability(...)
-check_dialogue_reachability(...)
-check_progression_reachability(...)
-find_unobtainable_items(...)
-find_unusable_abilities(...)
-generate_quality_report(...)
+instantiate deterministic fixture
+    -> ask actor/controller for visible available actions
+    -> choose via deterministic exploration strategy
+    -> submit ordinary command
+    -> verify invariants
+    -> repeat
 ```
 
-The SDK should expose public/test-support application interfaces, not private mutable domain shortcuts that bypass validation.
-
-## 6.1 CLI surface
-
-A CLI should eventually support commands like:
-
-```text
-rpg-engine validate pack ./my-pack
-rpg-engine test-content encounter my_pack:encounter/bridge
-rpg-engine simulate encounter my_pack:encounter/bridge --runs 100
-rpg-engine analyze quest my_pack:quest/ruins
-rpg-engine analyze dialogue my_pack:dialogue/merchant
-rpg-engine compare-sim reports/a.json reports/b.json
-```
-
-CLI naming can change, but functionality should remain scriptable and CI-friendly.
+This can discover unexpected state combinations while keeping legality server-authoritative.
 
 ---
 
-# 7. Generated/model-based play
+# 9. Creator-facing ContentQualityReport
 
-The lab may build on available-action walkers from the human-play specification.
+Produce machine-readable and human-readable quality output.
 
-Generated actors/clients:
-
-```text
-query visible state
-query available legal actions
-choose from advertised actions using scenario RNG/policy
-submit normal command
-observe result
-repeat until terminal/budget
-```
-
-Generated play must not implement hidden legality formulas.
-
-## 7.1 Exploration objectives
-
-Generated play can optimize for coverage goals such as:
-
-```text
-visit unseen state signatures
-exercise unused action types
-reach unseen quest/dialogue nodes
-exercise controller profiles
-exercise different timing paths
-trigger negative/rejection cases
-```
-
-The search/exploration policy is test infrastructure and uses an independent RNG from authoritative game/controller RNG.
-
----
-
-# 8. Invariants and property checks
-
-Useful cross-run invariants include:
-
-- inventory/currency conservation unless a typed source/sink event exists;
-- resources remain within defined bounds;
-- actor position remains valid under spatial authority;
-- no action occurs without a corresponding legal command/event path;
-- no hidden information appears in unauthorized projections;
-- command idempotency holds under retries;
-- event sequence/stream versions remain monotonic;
-- snapshots/replay reach identical canonical state;
-- controller decisions do not use hidden actors;
-- quest objective states follow allowed transitions;
-- published content refs resolve to pinned definitions.
-
----
-
-# 9. Performance and scale experiments
-
-The lab may run synthetic performance scenarios while preserving gameplay semantics.
-
-Examples:
-
-```text
-large encounter actor counts
-many concurrent campaigns
-high WebSocket fanout
-long event streams/replay
-projection rebuild throughput
-controller decision throughput
-large content-pack validation
-```
-
-Separate correctness results from performance measurements.
-
-Performance tests should record environment/build metadata so regressions are comparable.
-
----
-
-# 10. Reproducibility
-
-Every simulation result must be traceable to:
-
-```text
-engine revision
-ruleset/content lock
-scenario/template revision
-controller versions/profiles
-seed bundle
-timing mode
-spatial adapter
-configuration
-```
-
-Failed or anomalous runs should be promotable into permanent regression fixtures.
-
-Desired workflow:
-
-```text
-batch finds outlier
-    -> save run artifact
-    -> replay exact seed
-    -> diagnose
-    -> fix
-    -> convert to regression scenario
-```
-
----
-
-# 11. Quality gates for publishing
-
-Content publication policy may require selected checks.
-
-Examples:
-
-```text
-schema/reference validation required
-no blocking graph errors required
-encounter smoke simulation required
-quest reachability warnings reviewed
-human-play scenario IDs required for major content
-simulation threshold policy optional
-```
-
-Do not hard-code one global balance threshold into the engine. Different campaigns/content styles intentionally differ.
-
-A pack can publish with warnings when policy permits; blocking structural errors cannot.
-
----
-
-# 12. Reports and artifacts
+Conceptual shape:
 
 ```text
 ContentQualityReport
-    content_ref_or_draft_ref
+    schema_version
+    content_ref
+    engine_revision
     validation_summary
-    static_analysis_summary
-    playtest_results[]
-    simulation_results[]
+    reference_errors[]
+    reachability_findings[]
+    simulation_summaries[]
+    reproducible_outliers[]
     coverage_summary
     warnings[]
-    blocking_issues[]
-    generated_at
-    engine_revision
+    blocking_findings[]
 ```
 
-Artifacts should be JSON/machine-readable first, with optional human-readable Markdown/HTML renderers.
-
-Never include secrets or private production campaign data in reusable quality artifacts.
+Publication policy may require some findings to be clear before a pack becomes publish-ready.
 
 ---
 
-# 13. CI integration
+# 10. Content Testing SDK
 
-Suggested jobs:
+Expose a scriptable Python/API/CLI surface for creators and the local test agent.
+
+Target capabilities:
 
 ```text
-content-schema
-content-references
-content-static-analysis
-playtest-smoke
-simulation-smoke
-simulation-nightly
-quality-regressions
+validate_pack
+validate_definition
+instantiate_creature
+instantiate_encounter
+run_playtest_scenario
+run_simulation
+run_simulation_batch
+compare_simulation_runs
+analyze_quest_reachability
+analyze_dialogue_reachability
+analyze_progression_reachability
+find_unobtainable_items
+find_unusable_abilities
+build_content_quality_report
 ```
 
-PRs that change a definition should run affected validators/scenarios when dependency mapping can identify them.
-
-Nightly/full runs should periodically run broader matrices to catch missing dependency metadata or cross-content interactions.
+The SDK must not mutate live production campaign streams unless explicitly invoking a normal authorized runtime command against a designated test campaign.
 
 ---
 
-# 14. Permissions and isolation
+# 11. Isolation
 
-Production-hosted simulation jobs require explicit authorization and resource limits.
+Simulation jobs run in isolated/disposable state.
 
-Simulation workers operate on isolated copies/fixtures/branches, never directly on a live production campaign stream.
+They must not:
 
-Resource controls should include:
+- append events to real active campaigns;
+- consume production RNG state;
+- alter published definitions;
+- hold locks that interfere with normal player operations;
+- silently invoke external mutable services during deterministic replay.
+
+Use bounded worker execution for CPU-heavy workloads when required.
+
+---
+
+# 12. Controller testing
+
+The Simulation Lab is a major verification surface for NPC controllers.
+
+For `SimpleNpcController`, test:
 
 ```text
-max runs
-max simulation steps
-max actors
-max wall execution time
-max output artifact size
-concurrency quotas
+aggressive melee behavior
+ranged preferred-distance behavior
+balanced/defensive behavior
+support choices
+passive/non-hostile behavior
+flee threshold behavior
+legal target selection
+hidden target exclusion
+deterministic tie-breaking
+safe fallback behavior
+AI-vs-AI reproducibility
 ```
+
+Later advanced/external controllers are compared against the deterministic baseline, not allowed to replace its role as a reference/fallback.
 
 ---
 
-# 15. Milestone placement
+# 13. Performance evidence
+
+Simulation workloads are also useful for measured performance characterization.
+
+Track:
+
+```text
+simulations/sec
+commands/sec
+events/sec
+projection rebuild cost
+memory growth
+pathfinding cost
+controller decision cost
+batch size scaling
+```
+
+Performance claims require the canonical local `performance` profile and exact-commit evidence. Do not infer performance from code inspection.
+
+---
+
+# 14. Local execution profiles
+
+Relevant canonical local profiles include:
+
+```text
+simulation
+playtest
+performance
+full
+nightly
+release
+```
+
+`nightly` is a local profile name, not a GitHub Actions schedule. Broad simulation matrices may be invoked manually or through a user-controlled local scheduler.
+
+No GitHub Actions workflow may run, schedule, or publish evidence for Simulation/Quality Lab work.
+
+---
+
+# 15. Failure artifacts
+
+A failed/outlier run should retain enough information to reproduce:
+
+```text
+simulation/scenario ID
+commit SHA
+content lock
+ruleset/extension/controller versions
+seed bundle
+configuration
+iteration number
+last relevant events/projections
+assertion/finding
+performance data when relevant
+```
+
+The designated local test agent packages these into or references them from `TestEvidenceBundle`.
+
+---
+
+# 16. Roadmap integration
 
 ```text
 v0.1
-    deterministic seed/artifact primitives
-    quality-report schema seam
+    report/result schema seams
+    deterministic seed/evidence foundations
+
+v0.2
+    timing/action simulation hooks
 
 v0.3
-    encounter smoke simulation using SimpleNpcController
+    encounter simulation + AI-vs-AI deterministic smoke
 
 v0.4
-    ability/effect/resource metrics and generated-action exploration
+    effects/resources/abilities/progression metrics
+    generated action exploration
 
 v0.5
     spatial/perception invariants
 
 v0.6
-    progression reachability analysis
+    character/progression reachability
 
 v0.7
-    quest/dialogue/world/content reachability
-    creator-facing content quality report
-    initial Content Testing SDK
+    creator-facing ContentQualityReport
+    quest/dialogue/world/economy checks
+    Content Testing SDK
+    long-form Testing Grounds simulation/playtest composition
 
 v0.8
-    controller-comparison experiments
+    advanced/external controller comparisons
 
 v0.9
-    stable SDK/CLI contracts and remote test deployment support
+    stable local SDK/CLI contracts
 
 v1.0
-    reference simulation lab workflows, regression artifact promotion, and publishing quality gates
+    simulation/content-quality evidence is part of the local release profile
 ```
 
-The lab is intended to make the engine easier to author and maintain, not to replace human design judgment.
+---
+
+# 17. Completion rule
+
+A simulation/content-quality feature is complete when:
+
+- it uses the real runtime/definitions/controllers;
+- inputs and seeds are versioned/reproducible;
+- output is machine-readable;
+- important failures/outliers can be replayed;
+- it does not mutate live authoritative campaigns;
+- the designated local test agent can execute its canonical profile and emit evidence;
+- no GitHub Actions workflow is required or permitted.

@@ -4,7 +4,8 @@
 
 **Project:** `rpg-engine-api`  
 **Role:** Normative specification for executing tests in a real local/deployment-like environment and returning trustworthy evidence to remote coding/review agents.  
-**Goal:** Separate test design from test execution so no agent claims a change is verified without machine-produced evidence from an environment that actually ran the required suites.
+**Execution authority:** the designated **local test agent only**.  
+**GitHub Actions policy:** prohibited for this repository.
 
 `PLAN.md` remains the canonical roadmap. `docs/testing/HUMAN_PLAYTESTING.md` and `docs/testing/SIMULATION_QUALITY_LAB.md` define what should be tested; this document defines who may establish that it passed, how the tests are invoked, and what evidence must be returned.
 
@@ -21,18 +22,18 @@ remote development/review agents
     write tests/scenarios
     review diffs
     reason about failures/evidence
-    may run only tools actually available to them
+    do not establish local execution status
 
-local test agent / CI executor
-    runs the repository in a real configured environment
+local test agent
+    checks out the exact candidate revision
     installs dependencies
-    provisions required services
-    executes test profiles
+    provisions required local services
+    executes canonical local test profiles
     captures artifacts
-    reports exact pass/fail/skip state
+    reports exact pass/fail/skip/block state
 ```
 
-The local test agent is the **test execution authority** for local-environment claims.
+The local test agent is the **sole test execution authority** for merge, milestone, playability, integration and release execution claims.
 
 A remote agent may say:
 
@@ -40,7 +41,7 @@ A remote agent may say:
 "tests were added"
 "this is expected to satisfy scenario X"
 "static inspection found no issue"
-"CI/local evidence reports these suites passed"
+"local evidence reports these suites passed"
 ```
 
 A remote agent must not say:
@@ -49,15 +50,35 @@ A remote agent must not say:
 "all tests pass"
 "verified locally"
 "PostgreSQL integration tests pass"
-"the Godot/client integration works"
+"the client integration works"
 "release suite is green"
 ```
 
-unless current machine-produced evidence exists for the exact commit being discussed.
+unless current machine-produced **local** evidence exists for the exact commit being discussed.
 
 ---
 
-# 2. Evidence is commit-bound
+# 2. GitHub Actions and remote CI are not used
+
+This repository intentionally does not use GitHub Actions.
+
+Hard requirements:
+
+- `.github/workflows/` must remain absent/empty.
+- Do not create or enable GitHub Actions workflows.
+- Do not use GitHub-hosted Actions runners.
+- Do not use self-hosted runners through GitHub Actions.
+- Do not use Actions artifacts, checks, workflow conclusions or status badges as test evidence.
+- Do not configure merge/release gates that depend on GitHub Actions.
+- Do not substitute another remote CI service unless the user explicitly changes this policy.
+
+GitHub is used for source control, review and PR coordination. Test execution happens locally under the designated local test agent.
+
+If an older document says `CI`, `local-agent/CI`, or similar, treat that wording as deprecated and interpret the required execution source as the **local test agent only**.
+
+---
+
+# 3. Evidence is commit-bound
 
 Every execution result is bound to an exact source revision.
 
@@ -72,7 +93,7 @@ TestEvidenceBundle
     branch | null
     dirty_worktree
     test_profile
-    executor_kind
+    executor_kind = "local_agent"
     executor_version
     environment
     started_at
@@ -85,13 +106,13 @@ TestEvidenceBundle
 
 Evidence for one commit must not be treated as proof for a later code-changing commit.
 
-Documentation-only changes may reuse prior runtime evidence only when the change cannot affect runtime/test behavior and the merge policy explicitly allows it.
+Documentation-only changes may reuse prior runtime evidence only when the change cannot affect runtime/test behavior and repository policy explicitly permits it.
 
-A dirty worktree must be recorded. Release evidence should normally require `dirty_worktree = false`.
+A dirty worktree must be recorded. Release evidence should require `dirty_worktree = false` unless an explicitly documented exception exists.
 
 ---
 
-# 3. Environment manifest
+# 4. Environment manifest
 
 Record enough environment information to reproduce failures.
 
@@ -119,7 +140,7 @@ For environment-sensitive integrations, record safe capability metadata such as 
 
 ---
 
-# 4. Suite result schema
+# 5. Suite result schema
 
 Each executed suite records the command and outcome.
 
@@ -152,13 +173,13 @@ not_applicable
 
 `blocked` means the suite could not run because a required environment/service was unavailable. It does **not** count as passed.
 
-Unexpected skips or xpasses should be visible in evidence and may fail stricter profiles.
+Unexpected skips or xpasses remain visible in evidence and may fail stricter profiles.
 
 ---
 
-# 5. Standard test entry point
+# 6. Standard local test entry point
 
-The repository should converge on one scriptable entry point so every executor runs the same profiles.
+The repository converges on one scriptable local entry point so the local executor always runs the same profiles.
 
 Target interface:
 
@@ -192,11 +213,11 @@ The entry point must:
 5. generate machine-readable evidence;
 6. return non-zero when required gates fail.
 
-Agents must not silently replace the canonical profile with a shorter hand-picked command while claiming the canonical profile passed.
+Agents must not silently replace the canonical local profile with a shorter hand-picked command while claiming the canonical profile passed.
 
 ---
 
-# 6. Test profiles
+# 7. Test profiles
 
 ## `smoke`
 
@@ -211,7 +232,7 @@ Typical content:
 
 ## `pr`
 
-Primary pre-merge profile.
+Primary local pre-merge profile.
 
 Includes:
 
@@ -231,7 +252,7 @@ Pure/fast domain, rules, controller, schema, validation, and utility tests.
 
 ## `integration`
 
-Configured service integration including PostgreSQL and other required infrastructure.
+Configured local service integration including PostgreSQL and other required infrastructure.
 
 ## `playtest`
 
@@ -259,11 +280,11 @@ Complete deterministic correctness suite excluding only explicitly expensive sch
 
 ## `nightly`
 
-Full suite plus broader generated/property/fuzz/simulation matrices and selected recovery/chaos cases.
+Locally scheduled broad suite: full tests plus generated/property/fuzz/simulation matrices and selected recovery/chaos cases. `nightly` is a local profile name, not a GitHub Actions schedule.
 
 ## `release`
 
-Strict release gate including:
+Strict local release gate including:
 
 - clean revision/environment metadata;
 - full correctness suite;
@@ -277,7 +298,7 @@ Strict release gate including:
 
 ---
 
-# 7. Merge and release gates
+# 8. Merge and release gates
 
 Code being logically complete and code being mergeable are separate states.
 
@@ -290,9 +311,9 @@ implementation_ready
     docs/migrations updated
 
 execution_verified
-    required TestEvidenceBundle exists
+    required local TestEvidenceBundle exists
     evidence commit_sha matches candidate commit
-    required profile completed
+    required local profile completed
     mandatory suites passed
     no disallowed skips/blocks
 
@@ -304,18 +325,18 @@ mergeable
 
 Default expectation:
 
-- ordinary behavior-changing PR: `pr` evidence;
-- migration/persistence-sensitive PR: `pr` + relevant `migration`/`replay` evidence;
-- performance-sensitive change: `pr` + targeted `performance` evidence;
-- release candidate: `release` evidence.
+- ordinary behavior-changing PR: local `pr` evidence;
+- migration/persistence-sensitive PR: local `pr` + relevant `migration`/`replay` evidence;
+- performance-sensitive change: local `pr` + targeted `performance` evidence;
+- release candidate: local `release` evidence.
 
-The exact merge policy may evolve, but missing required evidence must never be silently treated as success.
+Missing required local evidence must never be silently treated as success.
 
 ---
 
-# 8. Evidence artifacts
+# 9. Evidence artifacts
 
-Machine-readable evidence should live in a predictable output tree, for example:
+Machine-readable evidence should live in a predictable local output tree, for example:
 
 ```text
 artifacts/test-evidence/<evidence_id>/
@@ -330,13 +351,13 @@ artifacts/test-evidence/<evidence_id>/
     logs/
 ```
 
-Artifacts may be uploaded to CI, attached to a PR, published by the local agent, or stored elsewhere according to deployment policy.
+The local agent may attach selected evidence to a PR, copy it to another user-approved location, or summarize it for review. GitHub Actions artifacts are not used.
 
-Large/generated evidence should not automatically be committed to the source repository. The repository should retain only durable golden fixtures/regressions that are intentionally version-controlled.
+Large/generated evidence should not automatically be committed to the source repository. The repository retains only durable golden fixtures/regressions intentionally version-controlled.
 
 ---
 
-# 9. Human-play failure artifacts
+# 10. Human-play failure artifacts
 
 For failed public play scenarios, preserve the contract from `HUMAN_PLAYTESTING.md`:
 
@@ -359,7 +380,7 @@ The local agent should surface the smallest reproducible bundle sufficient for a
 
 ---
 
-# 10. Determinism and simulation evidence
+# 11. Determinism and simulation evidence
 
 Simulation/replay evidence must include the exact:
 
@@ -379,7 +400,7 @@ Do not report aggregate percentages without preserving enough configuration to r
 
 ---
 
-# 11. Failure classification
+# 12. Failure classification
 
 The local agent should distinguish at least:
 
@@ -406,15 +427,15 @@ Retries may be used diagnostically, but the evidence should show that retries oc
 
 ---
 
-# 12. Local test agent workflow
+# 13. Local test agent workflow
 
 Recommended iteration:
 
 ```text
 1. fetch/checkout candidate commit
 2. verify worktree/revision
-3. provision declared environment
-4. run requested canonical profile
+3. provision declared local environment
+4. run requested canonical local profile
 5. collect machine-readable evidence
 6. if failure:
        classify failure
@@ -422,14 +443,14 @@ Recommended iteration:
        report exact failing suite/scenario/seed
 7. if pass:
        report exact profile + commit + environment
-8. attach/publish evidence for review
+8. attach/publish/surface evidence for review as directed by the user
 ```
 
-When a remote agent submits a fix, the local agent must test the new commit rather than assuming the previous evidence still applies.
+When a remote agent submits a fix, the local agent must test the new commit rather than assuming previous evidence still applies.
 
 ---
 
-# 13. Local agent permissions
+# 14. Local agent permissions
 
 The test agent may:
 
@@ -447,7 +468,7 @@ If testing against a real shared deployment is ever supported, destructive opera
 
 ---
 
-# 14. No fabricated verification
+# 15. No fabricated verification
 
 This is a repository-wide governance rule.
 
@@ -455,7 +476,7 @@ Agents must never fabricate:
 
 - commands they did not execute;
 - test counts they did not observe;
-- green suite status without evidence;
+- green suite status without local evidence;
 - screenshots/logs/output they did not receive;
 - local-environment behavior inferred only from code inspection.
 
@@ -463,9 +484,9 @@ When evidence is unavailable, say **not executed** or **execution evidence unava
 
 ---
 
-# 15. Evidence consumption by remote agents
+# 16. Evidence consumption by remote agents
 
-A remote agent reviewing evidence should verify:
+A remote agent reviewing local evidence should verify:
 
 1. `commit_sha` matches the code under review;
 2. requested profile is the profile actually executed;
@@ -473,25 +494,26 @@ A remote agent reviewing evidence should verify:
 4. failures/skips/blocks are not hidden in aggregate status;
 5. deterministic seeds/configuration are captured for relevant scenarios;
 6. migrations/replay evidence exists when persistence interpretation changed;
-7. performance evidence exists when a performance claim is being made.
+7. performance evidence exists when a performance claim is being made;
+8. `executor_kind` identifies the designated local agent/environment rather than a remote CI runner.
 
 The remote agent can then diagnose failures and prepare fixes using the artifact data without claiming direct local execution.
 
 ---
 
-# 16. Roadmap integration
+# 17. Roadmap integration
 
 Implementation should start small:
 
 ```text
 v0.1
     TestEvidenceBundle schema
-    canonical test profile manifest/runner seam
+    canonical local test profile manifest/runner seam
     smoke/pr profile foundations
     JUnit/evidence artifact output
 
 v0.2-v0.6
-    add timing/controller/combat/spatial/character suites to canonical profiles
+    add timing/controller/combat/spatial/character suites to canonical local profiles
 
 v0.7
     add authoring/session/simulation/content-quality profiles
@@ -501,20 +523,20 @@ v0.8
     add advanced-controller/external-controller evidence
 
 v0.9
-    stabilize CLI/profile/evidence schemas
-    support local/containerized/remote test deployment targets
+    stabilize local CLI/profile/evidence schemas
+    support in-process/local-server/containerized local targets
 
 v1.0
-    release profile is a mandatory release artifact
+    local release profile is a mandatory release artifact
     full gameplay + creator + operations + migration + replay + quality evidence
 ```
 
 ---
 
-# 17. Completion rule
+# 18. Completion rule
 
 A feature can be **implemented** before it is **execution-verified**.
 
-It cannot be described as locally tested/passing, and should not satisfy a milestone's execution gate, until matching local-agent or CI evidence exists for the candidate revision.
+It cannot be described as locally tested/passing, and cannot satisfy a milestone execution gate, until matching local-agent evidence exists for the candidate revision.
 
-The project optimizes for reproducible proof rather than confidence-by-assertion.
+The project optimizes for reproducible local proof rather than confidence-by-assertion or remote CI status.

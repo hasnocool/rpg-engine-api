@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+ACTION="${1:-up}"
+case "$ACTION" in
+  up)
+    docker compose up -d postgres
+    export RPG_ENGINE_DATABASE_URL="postgresql+asyncpg://rpg:rpg@127.0.0.1:5432/rpg_engine"
+    echo "PostgreSQL requested. Export for this shell:"
+    echo 'export RPG_ENGINE_DATABASE_URL="postgresql+asyncpg://rpg:rpg@127.0.0.1:5432/rpg_engine"'
+    ;;
+  down)
+    docker compose down
+    ;;
+  reset)
+    docker compose down -v
+    docker compose up -d postgres
+    ;;
+  *)
+    echo "usage: $0 {up|down|reset}" >&2
+    exit 2
+    ;;
+esac

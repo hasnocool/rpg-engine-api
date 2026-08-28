@@ -8,7 +8,8 @@
 **Architecture:** headless, deterministic, event-driven RPG simulation platform  
 **Initial compatible rules package:** SRD 5.2.1-based ruleset  
 **Canonical planning document:** this file  
-**Executable implementation ledger:** [`TODO.md`](TODO.md)
+**Executable implementation ledger:** [`TODO.md`](TODO.md)  
+**Test execution policy:** local test agent only; GitHub Actions are prohibited
 
 The goal is to let any client—Godot, Unity, browser, mobile, TUI, SSH, Discord-style UI, AI narrator, automation service, creator tool, simulation worker, or another game engine—create, author, test, operate, and play a D&D-style RPG by treating this API as the authoritative game simulation.
 
@@ -47,7 +48,7 @@ The authoritative server owns:
 - lobbies, invitations, ready checks, live DM/session operations, checkpoints/branches, recaps, and journals;
 - simulation, content-quality, reachability, balance-evidence, and regression tooling;
 - an explicit boundary between data-only content packs and trusted executable rules extensions;
-- a canonical local/CI test execution contract that produces commit-bound machine-readable evidence for merge and release gates;
+- a canonical local-only test execution contract that produces commit-bound machine-readable evidence for merge and release gates;
 - a cumulative executable TODO whose completion path continually produces something a human-facing client can actually play.
 
 Clients should primarily:
@@ -125,10 +126,11 @@ Every distributable content record must retain source/license provenance.
 25. **Checkpoints preserve history.** The default restore workflow creates a branch from history instead of destructively rewriting the authoritative event stream.
 26. **Simulation uses the real runtime.** Balance/content-quality tooling may automate the engine but must not become a simplified second rules/combat implementation.
 27. **Content upgrades are explicit.** Active campaigns do not silently receive mechanic-changing pack/extension revisions; upgrades use diff, compatibility, impact, migration dry-run, checkpoint, activation, and replay verification.
-28. **Execution claims require evidence.** A remote agent may design or inspect tests, but claims that suites passed locally require commit-bound local-agent or CI evidence.
+28. **Execution claims require local evidence.** A remote agent may design or inspect tests, but claims that suites passed require commit-bound evidence from the designated local test agent.
 29. **Verification is revision-specific.** Green evidence for one commit does not automatically verify a later code-changing commit; blocked/skipped required suites are never silently counted as passed.
 30. **Implementation follows the executable TODO.** Unless explicitly redirected, agents work the earliest unchecked, unblocked item in the active roadmap phase and update TODO status from objective implementation/evidence only.
 31. **Playability is cumulative.** A later milestone must not silently break an earlier P0–P8 playable gate; such a break is a product regression.
+32. **GitHub Actions are prohibited.** The repository must not contain or depend on `.github/workflows/*`, GitHub-hosted Actions runners, Actions self-hosted runners, Actions artifacts, or Actions status checks for testing, merge gates, milestone proof, or release proof. Runtime verification is local-only unless the user explicitly reverses this policy.
 
 ---
 
@@ -695,11 +697,13 @@ Normative test specifications:
 
 Testing includes unit/domain/controller tests, rules conformance, deterministic replay, creation workflows, timing/action matrices, visibility/security, content compatibility, migration fixtures, persistence failures, API/live contracts, property/model-based tests, public-interface human-play scenarios, generated action walkers, simulation batches, static/reachability analysis, and performance benchmarks.
 
-`Testing Grounds` is the canonical continuous integration/playtest campaign and grows to cover campaign/lobby/session, character creation, town/social/quests, trade/crafting, travel/discovery, autonomous NPC encounters, rewards/progression, reconnect, checkpoint/branch, session close/recap, and replay.
+`Testing Grounds` is the canonical continuous end-to-end playtest campaign and grows to cover campaign/lobby/session, character creation, town/social/quests, trade/crafting, travel/discovery, autonomous NPC encounters, rewards/progression, reconnect, checkpoint/branch, session close/recap, and replay.
 
-Execution verification is separate from test design. Local-agent/CI evidence must bind the exact commit, canonical test profile, environment, suite results, and relevant artifacts. Missing, blocked, or stale evidence cannot be represented as a green execution result.
+Execution verification is separate from test design. **Only local-agent evidence** may satisfy execution gates. Evidence must bind the exact commit, canonical local test profile, environment, suite results, and relevant artifacts. Missing, blocked, or stale evidence cannot be represented as a green execution result.
 
 The executable checklist and playability ladder in [`TODO.md`](TODO.md) are part of test planning: each phase identifies the public journey and canonical local profile that prove it.
+
+GitHub Actions and remote CI are not part of the testing architecture. See Section 50.
 
 ---
 
@@ -774,6 +778,8 @@ rpg-engine-api/
 └── pyproject.toml
 ```
 
+`.github/` may contain repository configuration such as Copilot instructions, but `.github/workflows/` must remain absent/empty under the local-only execution policy.
+
 `PLAN.md` is the canonical roadmap. Detailed specifications above are normative elaborations of this plan. `TODO.md` is the executable implementation ledger and must remain consistent with both.
 
 ---
@@ -804,7 +810,7 @@ Create the smallest authoritative engine capable of typed commands -> reproducib
 - health/readiness endpoints;
 - playtest harness skeleton, seed/transcript/artifact/coverage schemas;
 - `TestEvidenceBundle`/suite/environment schemas;
-- canonical test-profile runner/manifest seam with at least `smoke` and `pr` foundations;
+- canonical local test-profile runner/manifest seam with at least `smoke` and `pr` foundations;
 - machine-readable JUnit/evidence artifact output;
 - ContentQualityReport/CompatibilityReport schema seams;
 - Testing Grounds fixture skeleton;
@@ -821,7 +827,7 @@ The minimal public command path is deterministic/replayable; an actor can carry 
 
 Add the full scheduler/timing modes, universal action lifecycle, deadlines/timeouts, controller eligibility hooks, movement/rest/cooldown foundations, exact controllable-clock playtests, disconnect/control-handoff timing seams, and include those suites in the canonical local profiles.
 
-Exit when one representative action works deterministically under every timing mode and controller eligibility/timeout/reconnect paths require no blocking sleeps or polling, with matching local/CI evidence for the candidate revision before the milestone execution gate is satisfied and `TODO.md` Phase B complete.
+Exit when one representative action works deterministically under every timing mode and controller eligibility/timeout/reconnect paths require no blocking sleeps or polling, with matching **local evidence** for the candidate revision before the milestone execution gate is satisfied and `TODO.md` Phase B complete.
 
 ---
 
@@ -837,7 +843,7 @@ Exit when a creator can define/validate a basic encounter template and a human-f
 
 Add data-driven effects/features/resources/abilities/conditions/progression, authoring schemas for those definitions, safe declarative DSL expansion, trusted extension points for predicates/effect operations if required, simulation metrics for abilities/resources/effects, and generated-action exploration.
 
-Exit when representative mechanics can be authored/validated/published, exercised by humans/NPCs, and inspected through simulation without custom hidden handlers, with execution evidence for relevant integration/playtest/simulation suites and the P2 slice still working.
+Exit when representative mechanics can be authored/validated/published, exercised by humans/NPCs, and inspected through simulation without custom hidden handlers, with local execution evidence for relevant integration/playtest/simulation suites and the P2 slice still working.
 
 ---
 
@@ -889,7 +895,7 @@ Exit when a creator can author/publish a small campaign content set, a DM can ho
 
 ## v0.8 — Advanced Intelligent and External Controllers
 
-Build richer utility/goals/memory/schedules/external/LLM controllers on the proven baseline. Add controller comparisons in the simulation lab, explicit external-controller circuit breakers/fallbacks, AI DM command surfaces, trusted controller-provider extension seams, and executor evidence for external-controller/fallback scenarios.
+Build richer utility/goals/memory/schedules/external/LLM controllers on the proven baseline. Add controller comparisons in the simulation lab, explicit external-controller circuit breakers/fallbacks, AI DM command surfaces, trusted controller-provider extension seams, and local executor evidence for external-controller/fallback scenarios.
 
 `SimpleNpcController` remains the deterministic baseline/reference/fallback and all earlier playable gates remain regression requirements.
 
@@ -902,25 +908,25 @@ Stabilize `/api/v1`, OpenAPI/error/version/deprecation contracts, auth, discover
 - stable Creator/DM Studio authoring/schema-discovery APIs;
 - stable lobby/session/control/checkpoint/branch/recap/journal APIs;
 - stable Simulation/Content Testing SDK and CLI contracts;
-- remote test deployment support;
+- local/containerized test deployment support;
 - stable trusted extension API/capability contracts;
 - content semantic diff/compatibility/impact/migration-preview APIs;
 - controller assignment/status surfaces without leaking hidden AI state;
 - stable local test CLI/profile manifests and `TestEvidenceBundle` schema;
-- execution targets for in-process, local-server, containerized, and authorized remote test deployments;
+- execution targets for in-process, local-server, and containerized local test deployments;
 - `TODO.md` P7 content-evolution flow.
 
-Exit when the same executable scenarios can validate public game clients, creator workflows, session operations, simulation tooling, content-upgrade preview, and canonical test profiles through stable contracts, with P7 complete.
+Exit when the same executable scenarios can validate public game clients, creator workflows, session operations, simulation tooling, content-upgrade preview, and canonical local test profiles through stable contracts, with P7 complete.
 
 ---
 
 ## v1.0 — Production-Ready SRD 5.2.1 RPG Engine Platform
 
-Deliver stable core/game/client/controller schemas, SRD-compatible rules package, deterministic `SimpleNpcController`, complete authoring/validation/publish workflow, reference Creator APIs/examples, complete session/lobby/checkpoint/recap workflow, Content Testing SDK and simulation-lab reference workflows, trusted extension boundary documentation, content upgrade dry-run/activation/rollback-or-branch workflow, migration/replay fixtures, sample campaign/content, observability/security/backup/recovery/performance tooling, reference clients, executable release acceptance scenarios, and a strict local/CI `release` evidence bundle for the exact release candidate commit.
+Deliver stable core/game/client/controller schemas, SRD-compatible rules package, deterministic `SimpleNpcController`, complete authoring/validation/publish workflow, reference Creator APIs/examples, complete session/lobby/checkpoint/recap workflow, Content Testing SDK and simulation-lab reference workflows, trusted extension boundary documentation, content upgrade dry-run/activation/rollback-or-branch workflow, migration/replay fixtures, sample campaign/content, observability/security/backup/recovery/performance tooling, reference clients, executable release acceptance scenarios, and a strict **local `release` evidence bundle** for the exact release candidate commit.
 
 ### v1.0 success statement
 
-A third-party developer can build a supported client; a creator can author/validate/publish content; a DM can host and recover sessions; non-human actors can play autonomously; content can be simulated and quality-checked; campaigns can safely evolve content versions; and release claims are backed by reproducible execution evidence—all without modifying the authoritative core, duplicating hidden rules, or destroying historical replayability. `TODO.md` P8 is the executable release-quality gate.
+A third-party developer can build a supported client; a creator can author/validate/publish content; a DM can host and recover sessions; non-human actors can play autonomously; content can be simulated and quality-checked; campaigns can safely evolve content versions; and release claims are backed by reproducible **local execution evidence**—all without modifying the authoritative core, duplicating hidden rules, or destroying historical replayability. `TODO.md` P8 is the executable release-quality gate.
 
 ---
 
@@ -928,7 +934,7 @@ A third-party developer can build a supported client; a creator can author/valid
 
 The existing gameplay acceptance matrix remains mandatory and executable. It must cover rules/content setup, campaign/lobby/session creation, character creation, exploration/world interaction, social/quest systems, encounter/timing/controllers, progression, logs/history/replay, live sync, and content/controller evolution/recovery.
 
-In addition, v1.0 release scenarios must demonstrate the creator/operations/quality/extension acceptance set in Section 47, the cumulative P0–P8 playability requirements in `TODO.md`, and be included in the exact release candidate's `release` TestEvidenceBundle.
+In addition, v1.0 release scenarios must demonstrate the creator/operations/quality/extension acceptance set in Section 47, the cumulative P0–P8 playability requirements in `TODO.md`, and be included in the exact release candidate's local `release` `TestEvidenceBundle`.
 
 ---
 
@@ -965,7 +971,7 @@ A subsystem is not considered planned merely because a noun/interface exists. Be
 
 A milestone is not complete until applicable code is typed/non-blocking; required unit/integration/determinism/replay/visibility/controller tests exist; public schemas are documented/versioned; migrations/upcasters are included; licensing/provenance is correct; command/event/controller/content compatibility is preserved; concurrency/idempotency is tested; user-visible features have black-box play scenarios; timing uses controllable clocks; failures are reproducible; coverage manifests are current; creator-facing schemas validate/publish correctly; simulation/reachability checks exist where the feature is content-driven; extension/content migrations are dry-run/replay-tested where interpretation changes; the corresponding TODO phase is objectively complete; and its cumulative playability gate still passes.
 
-For the **execution gate**, the required local-agent/CI `TestEvidenceBundle` must match the candidate commit and canonical profile. If evidence is unavailable, blocked, stale, or missing required suites, the work may be described as implemented but not execution-verified and must not be represented as locally passing. The matching TODO verification checkbox stays unchecked or `[AWAITING EVIDENCE]`.
+For the **execution gate**, the required **local-agent `TestEvidenceBundle`** must match the candidate commit and canonical local profile. If evidence is unavailable, blocked, stale, or missing required suites, the work may be described as implemented but not execution-verified and must not be represented as locally passing. The matching TODO verification checkbox stays unchecked or `[AWAITING EVIDENCE]`.
 
 ---
 
@@ -1004,13 +1010,13 @@ The engine should support multiple timing modes and replaceable controllers with
 
 > **The engine understands time, events, actions, resources, effects, space, knowledge, rules, content, sessions, and replaceable controllers—not one hard-coded turn system, client, authoring UI, or AI implementation.**
 
-> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public interfaces; if content can be authored, it must be validateable/testable/versionable; if a campaign evolves, old history must remain interpretable; if a change is claimed to pass locally, that claim must be backed by revision-matched machine-produced evidence; and the implementation sequence must continuously converge on and preserve a playable game.**
+> **If a human can do it in a supported client, a deterministic programmatic persona must be able to do it through the same public interfaces; if content can be authored, it must be validateable/testable/versionable; if a campaign evolves, old history must remain interpretable; if a change is claimed to pass locally, that claim must be backed by revision-matched machine-produced local evidence; and the implementation sequence must continuously converge on and preserve a playable game.**
 
 ---
 
 # 45. Programmatic human-play testing architecture
 
-[`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) is normative. Public-interface-only playtests model player/DM/spectator personas, timing/reconnect behavior, independent seeds, scenario DSL/transcripts, visibility/invariant assertions, failure replay bundles, generated available-action walkers, chaos/recovery, CI modes, coverage manifests, and the continuous Testing Grounds campaign journey.
+[`docs/testing/HUMAN_PLAYTESTING.md`](docs/testing/HUMAN_PLAYTESTING.md) is normative. Public-interface-only playtests model player/DM/spectator personas, timing/reconnect behavior, independent seeds, scenario DSL/transcripts, visibility/invariant assertions, failure replay bundles, generated available-action walkers, chaos/recovery, **local execution modes**, coverage manifests, and the continuous Testing Grounds campaign journey.
 
 The v1.0 gameplay acceptance matrix must be executable, not prose-only.
 
@@ -1096,7 +1102,7 @@ Optional AI summarization operates on visibility-filtered structured recap facts
 
 ## 47.10 Content Testing SDK
 
-Expose programmatic creator/CI functionality for pack validation, creature/encounter instantiation, playtest execution, encounter simulation, batch comparison, quest/dialogue/progression reachability, unobtainable-item/unusable-ability detection, and machine-readable quality reports.
+Expose programmatic creator/local-test functionality for pack validation, creature/encounter instantiation, playtest execution, encounter simulation, batch comparison, quest/dialogue/progression reachability, unobtainable-item/unusable-ability detection, and machine-readable quality reports.
 
 Provide a scriptable CLI/API by v0.9. Important outlier/failure runs can be promoted into permanent regression fixtures.
 
@@ -1184,15 +1190,15 @@ remote development/review agent
     evidence interpretation
     fix preparation
 
-local test agent / CI executor
+local test agent
     checkout exact candidate revision
     provision required local services
-    execute canonical test profile
+    execute canonical local test profile
     capture machine-readable evidence
     preserve reproducible failure artifacts
 ```
 
-The local executor is the authority for claims about what actually ran and passed in that environment. Remote agents remain responsible for requiring the right tests and must not fabricate execution status when they cannot run them.
+The designated local executor is the sole authority for claims about what actually ran and passed in that environment. Remote agents remain responsible for requiring the right tests and must not fabricate execution status when they cannot run them.
 
 ## 48.2 Commit-bound evidence
 
@@ -1208,7 +1214,8 @@ commit_sha
 branch
 dirty_worktree
 test_profile
-executor_kind/executor_version
+executor_kind = local_agent
+executor_version
 environment
 started_at/finished_at
 overall_status
@@ -1219,9 +1226,9 @@ summary
 
 Environment metadata records safe reproducibility information such as OS/architecture, Python/dependency fingerprint, PostgreSQL/service versions, engine-config fingerprint, locale/timezone, and relevant feature flags. Secrets are never collected.
 
-## 48.3 Canonical profiles
+## 48.3 Canonical local profiles
 
-The repository converges on one scriptable test entry point supporting:
+The repository converges on one scriptable local test entry point supporting:
 
 ```text
 smoke
@@ -1240,6 +1247,8 @@ release
 
 The profile definition—not an agent's ad-hoc substitute—determines which suites are required for a claimed canonical run.
 
+`nightly` is a local profile name; it does not imply a GitHub Actions schedule.
+
 `blocked` or unexpectedly skipped required suites do not count as passed.
 
 ## 48.4 Merge gate
@@ -1251,8 +1260,8 @@ implementation_ready
     code/tests/docs/migrations are prepared
 
 execution_verified
-    exact-commit evidence exists
-    required profile ran
+    exact-commit local evidence exists
+    required local profile ran
     mandatory suites passed
     disallowed skips/blocks are absent
 
@@ -1264,10 +1273,10 @@ mergeable
 
 Default expectations:
 
-- behavior-changing PR -> `pr` evidence;
-- persistence/content interpretation changes -> `pr` plus relevant `migration`/`replay` evidence;
-- performance claims -> targeted `performance` evidence;
-- release candidate -> strict `release` evidence.
+- behavior-changing PR -> local `pr` evidence;
+- persistence/content interpretation changes -> local `pr` plus relevant `migration`/`replay` evidence;
+- performance claims -> targeted local `performance` evidence;
+- release candidate -> strict local `release` evidence.
 
 Documentation-only exceptions may be defined by merge policy where runtime execution cannot be affected.
 
@@ -1294,7 +1303,7 @@ Classify failures as product, test/fixture, environment, flaky/nondeterministic,
 
 ## 48.6 Evidence storage
 
-Generated evidence should use a predictable tree such as:
+Generated evidence should use a predictable local tree such as:
 
 ```text
 artifacts/test-evidence/<evidence_id>/
@@ -1325,7 +1334,7 @@ or:
 
 ```text
 execution evidence unavailable
-required next profile: <profile>
+required next local profile: <profile>
 ```
 
 not a guessed pass result.
@@ -1335,12 +1344,12 @@ not a guessed pass result.
 ```text
 v0.1
     TestEvidenceBundle schema
-    canonical profile runner/manifest seam
+    canonical local profile runner/manifest seam
     smoke + pr foundations
     machine-readable suite evidence
 
 v0.2-v0.6
-    timing/controller/combat/spatial/character suites enter canonical profiles
+    timing/controller/combat/spatial/character suites enter canonical local profiles
 
 v0.7
     authoring/session/simulation/migration/replay/full profiles
@@ -1350,18 +1359,18 @@ v0.8
     advanced/external controller evidence
 
 v0.9
-    stable test CLI/profile/evidence schemas
-    in-process/local/containerized/authorized-remote targets
+    stable local test CLI/profile/evidence schemas
+    in-process/local-server/containerized local targets
 
 v1.0
-    release TestEvidenceBundle is a required release artifact
+    local release TestEvidenceBundle is a required release artifact
 ```
 
 ## 48.9 Release proof
 
-The v1.0 release candidate is not execution-verified until the exact candidate commit has a successful `release` evidence bundle covering the required gameplay acceptance matrix, creator/session/quality acceptance set, migration/replay compatibility, visibility/security, recovery/backup where implemented, simulation/content-quality gates, and the defined performance profile.
+The v1.0 release candidate is not execution-verified until the exact candidate commit has a successful **local** `release` evidence bundle covering the required gameplay acceptance matrix, creator/session/quality acceptance set, migration/replay compatibility, visibility/security, recovery/backup where implemented, simulation/content-quality gates, and the defined performance profile.
 
-A later code change invalidates that release evidence until the required profile is rerun for the new candidate.
+A later code change invalidates that release evidence until the required local profile is rerun for the new candidate.
 
 ---
 
@@ -1381,7 +1390,7 @@ normative docs/
 TODO.md
     defines ordered implementation/checklist work
         ↓
-TestEvidenceBundle
+local TestEvidenceBundle
     proves what actually executed
 ```
 
@@ -1389,7 +1398,7 @@ Agents must not create a second competing TODO. When new implementation detail i
 
 Unless the user explicitly requests later work, agents select the earliest unchecked, unblocked TODO item in the active milestone.
 
-Implementation and execution verification are separate states. An item may be implemented but remain `[AWAITING EVIDENCE]`; an execution checkbox is not complete until the exact candidate commit has the required local-agent/CI evidence.
+Implementation and execution verification are separate states. An item may be implemented but remain `[AWAITING EVIDENCE]`; an execution checkbox is not complete until the exact candidate commit has the required **local-agent evidence**.
 
 ## 49.2 Playability ladder
 
@@ -1453,7 +1462,7 @@ A roadmap milestone cannot be represented as complete while its corresponding TO
 
 ## 49.5 Local evidence integration
 
-Each playable gate defines the canonical local profile(s) required to prove it. The local test agent may execute those profiles, while remote agents design/implement the tests and interpret evidence.
+Each playable gate defines the canonical local profile(s) required to prove it. Only the designated local test agent executes those profiles for verification; remote agents design/implement the tests and interpret returned evidence.
 
 Typical progression:
 
@@ -1466,7 +1475,7 @@ P7    -> migration + replay + full
 P8    -> release
 ```
 
-These names describe canonical profiles; profile manifests decide the exact suites. Required blocked or unexpectedly skipped tests do not count as passes.
+These names describe canonical **local** profiles; profile manifests decide the exact suites. Required blocked or unexpectedly skipped tests do not count as passes.
 
 ## 49.6 Playable-product definition of done
 
@@ -1486,3 +1495,90 @@ The project is not successful merely because endpoints exist. By the mature gate
 12. eventually author/publish and safely evolve content through the same platform.
 
 The executable TODO exists to make that outcome difficult to lose sight of during implementation.
+
+---
+
+# 50. Local-only execution policy — no GitHub Actions
+
+This section is authoritative and overrides any older generic use of the terms `CI`, `CI evidence`, or `local-agent/CI` elsewhere in repository history or documentation.
+
+## 50.1 Sole execution authority
+
+The designated **local test agent** is the only executor whose machine-produced results may satisfy repository execution gates.
+
+Remote development/review agents may implement tests, inspect code, choose required local profiles, and interpret evidence, but they do not establish execution success unless they are operating as the designated local test agent in the actual local environment.
+
+## 50.2 GitHub Actions prohibition
+
+The repository must not:
+
+- create or retain `.github/workflows/*.yml` or `.github/workflows/*.yaml`;
+- use GitHub-hosted Actions runners;
+- use self-hosted runners through GitHub Actions;
+- depend on Actions checks for PR mergeability;
+- publish or consume Actions artifacts as test evidence;
+- schedule `nightly`, `full`, `release`, simulation, migration, replay, performance, or other suites through GitHub Actions;
+- recommend GitHub Actions as a fallback when local execution is unavailable.
+
+`.github/` may still contain non-Actions configuration such as Copilot repository instructions.
+
+If a workflow file appears in a contribution, agents should remove it as part of repository policy enforcement unless the user explicitly reverses this decision.
+
+## 50.3 Local execution model
+
+Canonical profiles remain:
+
+```text
+smoke
+pr
+unit
+integration
+playtest
+simulation
+migration
+replay
+performance
+full
+nightly
+release
+```
+
+All are commands/profiles for the local test runner. Their names do not imply remote CI scheduling.
+
+The local agent may run them manually, through a user-controlled local scheduler, or through user-controlled local orchestration. The result is still local execution and must emit the same exact-commit `TestEvidenceBundle`.
+
+## 50.4 GitHub role
+
+GitHub remains useful for:
+
+```text
+source control
+branches
+pull requests
+code review
+issues
+release metadata
+```
+
+It is not the project's test execution platform.
+
+## 50.5 Merge and release proof
+
+A PR or release may be implementation-ready on GitHub while still awaiting local evidence.
+
+```text
+implementation_ready
+    repository changes prepared
+
+execution_verified
+    exact candidate revision tested by local agent
+    required local profile passed
+    evidence bundle reviewed
+
+mergeable/releasable
+    implementation_ready
+    + execution_verified
+    + normal review/policy requirements
+```
+
+The absence of GitHub Actions checks is intentional and must never be interpreted as missing project infrastructure.

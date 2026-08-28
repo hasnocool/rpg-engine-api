@@ -12,6 +12,8 @@ Authority order:
 
 `TODO.md` does not replace `PLAN.md`. If a TODO conflicts with the plan, the plan wins and the TODO must be corrected.
 
+**Execution policy:** all runtime verification is performed by the designated local test agent. GitHub Actions and remote CI are not used. Any older phrase such as `local-agent/CI` is superseded by `PLAN.md` Section 50 and means **local-agent evidence only**.
+
 The central delivery requirement is not merely to accumulate APIs. The repository must converge continuously toward a product that a real person can **launch, create or load a game, play through public interfaces, encounter autonomous non-human actors, save/reconnect/replay, and eventually author and evolve content**.
 
 ---
@@ -27,7 +29,8 @@ Before starting repository work:
 - identify the earliest unchecked, unblocked item in the active roadmap milestone unless the user explicitly requests a later item;
 - keep the change small enough to review and test;
 - add tests/scenarios/evidence hooks in the same change where practical;
-- never mark execution-verification items complete without exact-commit local-agent/CI evidence.
+- never mark execution-verification items complete without exact-commit **local-agent** evidence;
+- never add or rely on GitHub Actions workflows.
 
 When an architectural discovery changes the correct sequence, update `PLAN.md` first if architecture changes, then update this TODO.
 
@@ -38,7 +41,7 @@ Use Markdown checkboxes plus an optional status suffix:
 ```text
 [ ] not started
 [ ] [IN PROGRESS] implementation is actively being changed
-[ ] [AWAITING EVIDENCE] implementation exists but required local/CI execution evidence is missing
+[ ] [AWAITING EVIDENCE] implementation exists but required local execution evidence is missing
 [ ] [BLOCKED: reason] cannot proceed until a named dependency is resolved
 [x] complete and supported by the required evidence/inspection
 ```
@@ -183,7 +186,7 @@ Local profiles: `migration`, `replay`, `full`.
 
 ## P8 — Release-quality playable platform
 
-The exact release candidate passes the complete gameplay acceptance matrix, creator/session/quality acceptance set, visibility/security checks, recovery, migration/replay, deterministic simulation gates, and defined performance profile with one exact-commit `release` `TestEvidenceBundle`.
+The exact release candidate passes the complete gameplay acceptance matrix, creator/session/quality acceptance set, visibility/security checks, recovery, migration/replay, deterministic simulation gates, and defined performance profile with one exact-commit local `release` `TestEvidenceBundle`.
 
 Local profile: `release`.
 
@@ -191,7 +194,7 @@ Local profile: `release`.
 
 # 4. Phase A — Repository and execution foundation (v0.1)
 
-Goal: establish a clean modern Python project, deterministic core contracts, test execution evidence, and P0/P1.
+Goal: establish a clean modern Python project, deterministic core contracts, local test execution evidence, and P0/P1.
 
 ## A1. Project scaffold
 
@@ -205,10 +208,11 @@ Goal: establish a clean modern Python project, deterministic core contracts, tes
 - [ ] Add README quick-start sufficient for the local agent.
 - [ ] Add health and readiness endpoints with distinct semantics.
 - [ ] Ensure no import-time network/database side effects.
+- [ ] Ensure `.github/workflows/` is absent/empty and no GitHub Actions dependency exists.
 
-## A2. Canonical test runner and evidence
+## A2. Canonical local test runner and evidence
 
-- [ ] Create `scripts/test` as the single canonical test entry point.
+- [ ] Create `scripts/test` as the single canonical local test entry point.
 - [ ] Implement named profiles: `smoke`, `pr`, `unit`, `integration`, `playtest`, `simulation`, `migration`, `replay`, `performance`, `full`, `nightly`, `release`.
 - [ ] Define a machine-readable test-profile manifest mapping each profile to required suites.
 - [ ] Implement `TestEvidenceBundle` schema from `docs/testing/LOCAL_TEST_AGENT.md`.
@@ -221,6 +225,7 @@ Goal: establish a clean modern Python project, deterministic core contracts, tes
 - [ ] Add JUnit/coverage hooks where supported.
 - [ ] Add a human-readable execution summary derived from the machine bundle.
 - [ ] Add self-tests for the runner/evidence parser.
+- [ ] Ensure all profile execution is local and no profile invokes GitHub Actions/remote CI.
 
 ## A3. Shared identifiers and definitions
 
@@ -422,855 +427,892 @@ Goal: one deterministic scheduler/action model supports all planned timing polic
 
 # 6. Phase C — First real game: combat + SimpleNpcController (v0.3)
 
-Goal: achieve **P2**, the first unmistakably game-like playable vertical slice.
+Goal: achieve **P2**, the first unmistakably game-like playable slice.
 
-## C1. Ruleset/runtime combat foundation
+## C1. Encounter lifecycle
 
-- [ ] Implement ruleset manifest/registry.
-- [ ] Add correctly attributed SRD-compatible package foundation.
-- [ ] Implement generic resolution context/outcome.
-- [ ] Implement ability/check/save foundation.
-- [ ] Implement initiative/readiness translation.
-- [ ] Implement turn/action resources.
-- [ ] Implement attacks.
-- [ ] Implement deterministic attack/check dice flow.
-- [ ] Implement damage/healing.
-- [ ] Implement health projection.
-- [ ] Implement modifier advantage/disadvantage-style framework where licensed.
-- [ ] Implement critical-result framework where licensed.
-- [ ] Implement conditions foundation.
-- [ ] Implement reactions/interrupts.
-- [ ] Implement Ready-style trigger seam where licensed.
-
-## C2. Encounter runtime
-
-- [ ] Implement encounter aggregate/state machine.
-- [ ] Implement participant join/leave.
-- [ ] Implement factions/sides.
-- [ ] Implement starting positions.
-- [ ] Implement encounter start/pause/resume/end.
-- [ ] Implement victory/failure/completion hooks.
-- [ ] Implement cleanup of reserved actions/reactions/resources.
-- [ ] Implement reward hook.
-- [ ] Implement encounter history projection.
-- [ ] Implement combat log projection.
-- [ ] Add rule-trace diagnostics with proper visibility.
-
-## C3. Encounter authoring foundation
-
+- [ ] Implement encounter definition/runtime separation.
 - [ ] Implement `EncounterTemplate` schema.
-- [ ] Define participant groups.
-- [ ] Define controller assignments.
-- [ ] Define spawn/starting-position data.
-- [ ] Define objective/completion policy.
-- [ ] Define reward reference.
-- [ ] Define basic scaling seam.
-- [ ] Validate references and instantiation.
-- [ ] Add preview endpoint/service.
+- [ ] Implement start/active/complete/aborted states.
+- [ ] Implement participant/controller assignments.
+- [ ] Implement initiative/readiness mapping.
+- [ ] Implement encounter objectives/completion policy.
+- [ ] Implement reward-result seam.
 
-## C4. SimpleNpcController combat MVP
+## C2. Combat rules foundation
 
-- [ ] Implement visibility-filtered `NpcDecisionView`.
-- [ ] Implement `NpcBehaviorProfile` schema/version.
+- [ ] Implement checks/saves/attack resolution contexts.
+- [ ] Implement attack rolls and deterministic damage/healing.
+- [ ] Implement health/down/defeated state.
+- [ ] Implement modifiers.
+- [ ] Implement basic conditions.
+- [ ] Implement reactions/interrupt windows.
+- [ ] Implement basic combat movement/target validation.
+- [ ] Implement player-facing combat log projection.
+- [ ] Implement rule traces suitable for debugging.
+
+## C3. SimpleNpcController combat MVP
+
+- [ ] Implement deterministic baseline controller.
 - [ ] Implement aggressive-melee profile.
 - [ ] Implement ranged profile.
 - [ ] Implement balanced/defensive profile.
 - [ ] Implement support profile.
 - [ ] Implement passive profile.
 - [ ] Implement flee profile.
-- [ ] Implement one-decision-at-a-time candidate scoring.
+- [ ] Use only visibility-filtered controller view.
 - [ ] Use only server-advertised legal actions/targets.
-- [ ] Implement deterministic stable tie-breaking.
-- [ ] Implement retreat threshold behavior.
-- [ ] Implement reaction policy baseline.
-- [ ] Implement safe fallback policy.
-- [ ] Implement non-authoritative decision trace.
-- [ ] Ensure hidden/unperceived actors cannot affect decisions.
+- [ ] Deterministic stable tie-breaking.
+- [ ] Safe fallback when preferred action fails/rejects.
+- [ ] Controller decision does not consume combat/dice RNG.
+- [ ] Persist controller/profile versions for replay provenance.
 
-## C5. Testing Grounds combat fixture
+## C4. P2 Testing Grounds combat
 
-- [ ] Add a small encounter location/scene fixture.
-- [ ] Add one playable pre-generated character.
-- [ ] Add at least one autonomous hostile NPC/creature.
-- [ ] Add at least one movement choice.
-- [ ] Add at least one attack/action choice.
-- [ ] Add at least one resource-bearing action where runtime supports it.
-- [ ] Add reward/result.
-- [ ] Add human-readable combat log messages.
-
-## C6. P2 playable combat gate
-
-- [ ] Reference client can load/create Testing Grounds combat state.
-- [ ] Human persona selects/controls the player actor.
-- [ ] Available actions are discovered from server.
-- [ ] Human moves legally.
-- [ ] Human attacks/uses representative action.
-- [ ] NPC autonomously chooses and submits action.
-- [ ] Human can observe NPC result without hidden decision leakage.
-- [ ] Reaction/interrupt path is exercised if supported by current SRD slice.
-- [ ] Encounter completes without test harness puppeting NPC turns.
-- [ ] Reward/result is projected.
-- [ ] Combat log is readable.
-- [ ] Full encounter replay reaches same canonical hash.
-- [ ] AI-vs-AI smoke simulation is deterministic.
-- [ ] Exact-commit `playtest` evidence captured.
-- [ ] Exact-commit `replay` evidence captured.
-- [ ] Exact-commit `simulation` evidence captured.
+- [ ] Create a canonical combat fixture.
+- [ ] Human character enters encounter through public API.
+- [ ] Human can inspect visible opponents.
+- [ ] Human can query legal actions.
+- [ ] Human can move.
+- [ ] Human can make a basic attack.
+- [ ] Human can exercise a representative limited resource/action.
+- [ ] Autonomous NPC moves/attacks without harness puppeteering.
+- [ ] Human/NPC reaction path executes.
+- [ ] Encounter completes naturally.
+- [ ] Reward/result is visible.
+- [ ] Combat log is understandable.
+- [ ] Full encounter replays to identical canonical hash.
+- [ ] AI-vs-AI simulation is deterministic.
+- [ ] Local `playtest`, `replay`, and `simulation` evidence captured.
 
 ---
 
-# 7. Phase D — Data-driven mechanics and progression primitives (v0.4)
+# 7. Phase D — Effects, resources, abilities and progression (v0.4)
 
-## D1. Effects and modifiers
+Goal: replace ad-hoc combat mechanics with reusable authored/data-driven systems while preserving P2.
 
-- [ ] Implement generic effect definition/instance.
-- [ ] Implement triggers.
-- [ ] Implement modifiers.
-- [ ] Implement durations/expiration.
-- [ ] Implement stacking policies.
+## D1. Effect/runtime primitives
+
+- [ ] Implement `EffectDefinition`/instances.
+- [ ] Implement modifier pipeline.
+- [ ] Implement trigger hooks.
+- [ ] Implement durations.
+- [ ] Implement stacking/replacement rules.
 - [ ] Implement periodic effects.
-- [ ] Implement area-effect seam.
-- [ ] Implement removal/reversal rules where explicitly defined.
+- [ ] Implement maintenance/concentration-like resource hooks generically.
+- [ ] Implement temporary grants.
 
-## D2. Resources/features/abilities
+## D2. Resources/abilities
 
 - [ ] Implement `ResourceDefinition/State`.
-- [ ] Implement `FeatureDefinition`.
+- [ ] Implement recovery rules.
 - [ ] Implement `AbilityDefinition`.
-- [ ] Implement resource costs/recovery.
-- [ ] Implement maintenance/concentration-style seam.
-- [ ] Implement temporary grants.
-- [ ] Integrate conditions with effect pipeline.
-- [ ] Ensure available-action discovery includes newly legal abilities.
-- [ ] Ensure SimpleNpcController can rank action tags without spell-specific hidden code.
+- [ ] Map abilities into universal actions.
+- [ ] Implement representative ability/spell/power.
+- [ ] Ensure human and NPC actors use same mechanics.
 
-## D3. Progression graph
+## D3. Progression primitives
 
-- [ ] Implement graph/node/edge schemas.
-- [ ] Implement prerequisite evaluation.
-- [ ] Implement ranked nodes.
-- [ ] Implement mutually exclusive choices.
-- [ ] Implement grant/revoke.
-- [ ] Implement progression currency seam.
+- [ ] Implement progression graph/node/edge schemas.
+- [ ] Implement prerequisites through `RequirementExpr`.
+- [ ] Implement grants/revokes.
+- [ ] Implement ranks.
+- [ ] Implement exclusive branches.
+- [ ] Implement progression currency.
 - [ ] Implement respec policy seam.
-- [ ] Implement progression schema/version migration seam.
-
-## D4. Authoring/quality
-
-- [ ] Add authoring schemas for effects/features/resources/abilities/progression.
-- [ ] Add layered validation.
-- [ ] Add unusable ability detection where feasible.
 - [ ] Add progression reachability analysis.
-- [ ] Add generated available-action exploration.
-- [ ] Add representative simulation metrics for resources/ability usage.
 
-## D5. Playable regression
+## D4. Authoring and simulation
 
-- [ ] P2 combat still passes.
-- [ ] Player can use at least one data-driven ability/resource.
-- [ ] NPC can use at least one advertised data-driven ability through generic profile scoring.
-- [ ] Effect/condition visibly changes subsequent legal play.
-- [ ] Replay remains deterministic.
+- [ ] Add authoring schemas for effect/resource/ability/progression definitions.
+- [ ] Validate/publish representative authored mechanics.
+- [ ] Extend available-action walker to generated abilities.
+- [ ] Add simulation metrics for ability/resource use.
+- [ ] Preserve P2 combat with data-driven implementations.
+- [ ] Capture required local playtest/simulation evidence.
 
 ---
 
 # 8. Phase E — Spatial authority, perception and exploration (v0.5)
 
-Goal: achieve P3.
+Goal: achieve **P3**: exploration/discovery naturally flows into P2 combat.
 
 ## E1. Spatial adapters
 
-- [ ] Define `SpatialAdapter` contract.
-- [ ] Implement theater-of-mind adapter.
-- [ ] Implement graph adapter.
-- [ ] Implement square-grid adapter.
-- [ ] Implement continuous-2D adapter.
-- [ ] Add hex/continuous-3D later if not needed for initial acceptance.
-- [ ] Implement occupancy/distance.
-- [ ] Implement path validation/pathfinding hooks.
-- [ ] Implement terrain cost.
-- [ ] Implement LOS/cover.
-- [ ] Implement area queries.
+- [ ] Theater-of-mind adapter.
+- [ ] Graph adapter.
+- [ ] Square-grid adapter.
+- [ ] Hex adapter.
+- [ ] Continuous 2D adapter.
+- [ ] Continuous 3D interface/contract even if full implementation is deferred.
+- [ ] Distance/reach.
+- [ ] Occupancy.
+- [ ] Pathfinding.
+- [ ] Terrain cost.
+- [ ] LOS/cover.
+- [ ] Area queries.
 
 ## E2. Movement
 
-- [ ] Validate movement through action model.
-- [ ] Implement trajectories/meaningful movement events.
-- [ ] Add forced/teleport/custom movement seams.
-- [ ] Prevent direct coordinate patches.
+- [ ] Walk/run/crawl movement modes.
+- [ ] Climb/swim movement seams.
+- [ ] Fly/jump/teleport/forced movement policy seams.
+- [ ] Server-authoritative trajectory representation for real-time modes.
+- [ ] Movement interruption/collision policy.
 
 ## E3. Perception/knowledge
 
-- [ ] Implement senses.
-- [ ] Implement can-perceive/perception-quality/known-position interfaces.
-- [ ] Implement visibility-filtered entity fields.
-- [ ] Implement discovery facts/events.
-- [ ] Implement actor/party/campaign knowledge scopes.
-- [ ] Add golden no-leak tests.
-- [ ] Build controller decision view from same perception layer.
+- [ ] Sense definitions.
+- [ ] `can_perceive` rule contract.
+- [ ] Detection vs identification.
+- [ ] Known-position semantics.
+- [ ] Discovery events.
+- [ ] Hidden fields remain absent/redacted until known.
+- [ ] Controller views use same knowledge boundary.
 
-## E4. World objects and hazards
+## E4. World objects/exploration
 
-- [ ] Implement world object definitions/instances.
-- [ ] Implement containers/open/lock/access state.
-- [ ] Implement terrain definitions.
-- [ ] Implement hazard definitions/triggers/detection.
-- [ ] Implement scene lifecycle.
+- [ ] Region/location/world schemas.
+- [ ] Scene/map definitions.
+- [ ] Object/container definitions/instances.
+- [ ] Doors/barriers.
+- [ ] Hazards/traps seam.
+- [ ] Search/investigate/interact actions.
+- [ ] Travel action.
+- [ ] Marching-order foundation.
 
-## E5. Exploration/travel
+## E5. P3 Testing Grounds
 
-- [ ] Implement move/travel/search/study/scout/interact/open/close/use foundations.
-- [ ] Implement location enter/exit/discovery.
-- [ ] Implement fact/object/path discovery.
-- [ ] Implement marching order/formation seam.
-
-## E6. NPC spatial behavior
-
-- [ ] Approach visible target.
-- [ ] Maintain preferred range.
-- [ ] Increase distance/flee.
-- [ ] Follow actor.
-- [ ] Hold position.
-- [ ] Move to assigned point.
-- [ ] Never use hidden targets for movement decisions.
-
-## E7. P3 playable exploration gate
-
-- [ ] Testing Grounds Town/Forest graph exists.
-- [ ] Player enters location.
-- [ ] Player sees only perceived entities.
-- [ ] Player moves through at least two locations.
-- [ ] Player discovers a hidden path/fact/object via rules-driven play.
-- [ ] Player interacts with a world object/container.
-- [ ] Player travels into the combat encounter naturally.
-- [ ] Same fixture can be validated under at least two spatial adapters where practical.
-- [ ] Visibility tests show NPC and player hidden-state isolation.
-- [ ] `playtest` + `replay` evidence captured.
+- [ ] Town/road/forest/camp/ruins locations.
+- [ ] Travel between visible locations.
+- [ ] Hidden path initially absent from player projection.
+- [ ] Discovery action reveals hidden path.
+- [ ] Container/object interaction.
+- [ ] NPC cannot target undiscovered/hidden actor.
+- [ ] Travel to encounter location starts P2 combat naturally.
+- [ ] Return state remains consistent after encounter.
+- [ ] Replay produces identical knowledge/world state.
+- [ ] Local playtest/replay evidence captured.
 
 ---
 
-# 9. Phase F — Complete character runtime (v0.6)
+# 9. Phase F — Complete character runtime and progression (v0.6)
 
-Goal: achieve P4.
+Goal: achieve **P4**: create a real character, play it, earn progression and make a meaningful advancement choice.
 
-## F1. Character creation sessions
+## F1. Character creation discovery
 
-- [ ] Implement resumable creation session state.
-- [ ] Implement ruleset-driven creation step graph.
-- [ ] Implement upstream-choice revalidation.
-- [ ] Implement class/subclass choices.
-- [ ] Implement species/background/languages.
-- [ ] Implement ability generation/assignment policies.
-- [ ] Implement skills/tool proficiencies.
-- [ ] Implement starting equipment.
-- [ ] Implement feats/features.
-- [ ] Implement spells/powers/loadouts.
-- [ ] Implement identity/appearance/biography fields.
-- [ ] Implement validate/finalize.
+- [ ] Ruleset character-creation schema endpoint.
+- [ ] Step graph/dependencies.
+- [ ] Dynamic choice groups.
+- [ ] Human-readable descriptions/UI metadata.
+- [ ] Validation errors/warnings.
 
-## F2. Higher-level/multiclass
+## F2. Character creation session
 
-- [ ] Implement sequentially valid higher-level creation.
-- [ ] Implement class-level/total-level state.
-- [ ] Implement multiclass prerequisites.
-- [ ] Ensure result equals valid sequential advancement.
+- [ ] Start/resume/cancel/expire creation draft.
+- [ ] Choose class.
+- [ ] Choose species.
+- [ ] Choose background/origin.
+- [ ] Choose languages.
+- [ ] Choose proficiencies.
+- [ ] Choose equipment.
+- [ ] Choose features/feats.
+- [ ] Choose spells/powers where applicable.
+- [ ] Identity/details.
+- [ ] Ability-generation methods.
+- [ ] Dependency invalidation/revalidation.
+- [ ] Finalize transaction.
 
-## F3. Character projections/lifecycle
+## F3. Character runtime
 
-- [ ] Implement complete character sheet projection.
-- [ ] Implement skills/features/resources/inventory/spellcasting/action projections.
-- [ ] Implement character history.
-- [ ] Implement active/inactive/retired/archived lifecycle.
-- [ ] Implement import staging/validation.
-- [ ] Implement portable export without auth/control grants.
+- [ ] Complete character sheet projection.
+- [ ] Class/subclass tracks.
+- [ ] Species/background traits.
+- [ ] Proficiencies/skills.
+- [ ] Inventory/equipment connection.
+- [ ] Spell/power known/prepared state.
+- [ ] Lifecycle states.
+- [ ] Import/export validation boundary.
+- [ ] Higher-level start.
+- [ ] Multiclassing.
 
 ## F4. Advancement
 
-- [ ] Implement advancement session.
-- [ ] Implement XP/milestone/progression-point policies.
-- [ ] Map representative SRD class progression into graph.
-- [ ] Implement branching custom progression seam.
+- [ ] XP policy.
+- [ ] Milestone policy.
+- [ ] Quest/session reward hooks.
+- [ ] Resumable advancement transaction.
+- [ ] Progression choices.
+- [ ] Recalculate projections from grants/effects.
 
-## F5. Character authoring/quality
+## F5. P4 Testing Grounds
 
-- [ ] Add schemas for classes/subclasses/species/backgrounds/templates/progression.
-- [ ] Add validation/preview.
-- [ ] Add systematic creation matrix.
-- [ ] Add unreachable progression detection.
-- [ ] Add representative legal/illegal creation playtests.
-
-## F6. P4 playable character/progression gate
-
-- [ ] Player creates character without client-side hidden rules.
+- [ ] Programmatic human creates character entirely from server-discovered schema.
 - [ ] Character enters Testing Grounds.
-- [ ] Character has legal actions derived from choices.
 - [ ] Character completes exploration/combat.
-- [ ] Character gains progression reward.
-- [ ] Player opens advancement session.
-- [ ] Player makes valid progression choice.
-- [ ] Character sheet/available actions update.
-- [ ] Replay preserves progression.
-- [ ] `playtest` + `replay` evidence captured.
+- [ ] Character gains XP/milestone/progression currency.
+- [ ] Advancement becomes available.
+- [ ] Player selects one legal progression choice.
+- [ ] New ability/feature/action is visible and usable.
+- [ ] Character replay remains deterministic.
+- [ ] Creation/progression reachability analysis passes.
+- [ ] Local playtest/replay evidence captured.
 
 ---
 
-# 10. Phase G — Campaign, world, social, economy, Creator Studio and sessions (v0.7)
+# 10. Phase G — Complete campaign composition / Creator Studio / DM operations (v0.7)
 
-Goal: achieve P5 and P6.
+Goal: achieve **P5 and P6**: host a complete session and author playable content through one coherent platform.
 
 ## G1. Campaign creator
 
-- [ ] Implement campaign creation session/draft.
-- [ ] Implement template selection.
-- [ ] Configure timing/timeout.
-- [ ] Configure progression/rest.
-- [ ] Configure spatial/world clock.
-- [ ] Configure visibility/logging.
-- [ ] Configure content packs/house rules.
-- [ ] Configure baseline NPC controller defaults.
+- [ ] Resumable campaign creation session.
+- [ ] Ruleset/content-pack selection.
+- [ ] Template selection.
+- [ ] Timing/deadline/timeout policy configuration.
+- [ ] Spatial configuration.
+- [ ] Progression/rest/death/difficulty policies.
+- [ ] World/calendar configuration.
+- [ ] Visibility/logging policies.
+- [ ] House rules.
 - [ ] Validate/finalize campaign.
 
 ## G2. Membership/lobby/session
 
-- [ ] Implement campaign memberships/roles.
-- [ ] Implement invitations.
-- [ ] Implement lobby open/join/leave.
-- [ ] Implement actor selection/control grants.
-- [ ] Implement ready checks.
-- [ ] Implement session open/pause/resume/close.
-- [ ] Implement spectator presence.
-- [ ] Implement multi-device control conflict policy.
-- [ ] Implement disconnect grace/AFK policy.
-- [ ] Implement explicit temporary SimpleNpcController handoff.
-- [ ] Implement explicit control restoration on reconnect.
+- [ ] Invitations.
+- [ ] Membership roles.
+- [ ] Lobby open/join/leave.
+- [ ] Character/actor assignment.
+- [ ] Actor control grants.
+- [ ] Ready checks.
+- [ ] Session open/pause/resume/close.
+- [ ] Spectator role.
+- [ ] Multi-device conflict policy.
+- [ ] Disconnect grace/AFK policies.
+- [ ] SimpleNpcController temporary handoff.
+- [ ] Explicit human-control restoration.
 
-## G3. Party/world/time
+## G3. Living world
 
-- [ ] Implement party model.
-- [ ] Implement marching order/formation.
-- [ ] Implement world/region/location hierarchy.
-- [ ] Implement calendar projection.
-- [ ] Implement world-clock policies.
-- [ ] Implement travel process.
-- [ ] Implement weather/environment state.
-- [ ] Implement NPC schedules.
-- [ ] Implement simple schedule-step controller behavior.
+- [ ] Calendar/time-of-day.
+- [ ] World event scheduler.
+- [ ] Weather/environment.
+- [ ] Travel durations/events.
+- [ ] NPC schedules.
+- [ ] Idle/follow/hold/move-to-location controller states.
 
-## G4. Social/dialogue/personality
+## G4. Social/dialogue
 
-- [ ] Implement dialogue state machine.
-- [ ] Implement typed social actions.
-- [ ] Implement `NpcPersonalityProfile` distinct from combat AI profile.
-- [ ] Implement disposition/goals/loyalties/fears/interests/tags.
-- [ ] Implement relationship/aggression/assistance thresholds.
-- [ ] Ensure personality uses visible/known relationship/faction/quest context.
-- [ ] Keep natural-language generation optional/non-authoritative.
+- [ ] Social actions.
+- [ ] Dialogue graph definitions/runtime.
+- [ ] Dialogue choices/requirements/effects.
+- [ ] `NpcPersonalityProfile`.
+- [ ] Relationship state.
+- [ ] Faction reputation.
+- [ ] Deterministic narration templates.
+- [ ] Visibility-safe player messages.
 
-## G5. Quests/factions/relationships
+## G5. Quests
 
-- [ ] Implement quest definition/objective graph.
-- [ ] Implement accept/advance/complete/fail flows.
-- [ ] Implement sequential/parallel/optional/exclusive/hidden/timed objectives.
-- [ ] Implement faction state.
-- [ ] Implement reputation/relationship state.
-- [ ] Project quest state from events.
+- [ ] Quest definitions/instances.
+- [ ] Sequential objectives.
+- [ ] Parallel objectives.
+- [ ] Optional objectives.
+- [ ] Exclusive branches.
+- [ ] Hidden/timed/repeatable objective seams.
+- [ ] Quest rewards.
+- [ ] Quest journal projection.
+- [ ] Reachability analysis.
 
-## G6. Inventory/economy/crafting
+## G6. Inventory/economy
 
-- [ ] Complete item definition/instance model.
-- [ ] Complete inventories/containers.
-- [ ] Implement currency/wallet.
-- [ ] Implement vendors/pricing/schedules.
-- [ ] Implement atomic trade.
-- [ ] Implement deterministic loot/rewards.
-- [ ] Implement recipe/crafting scheduled process.
-- [ ] Add acquisition-path quality checks.
+- [ ] Item definitions/instances.
+- [ ] Containers.
+- [ ] Equipment.
+- [ ] Currency/wallets.
+- [ ] Vendors.
+- [ ] Buy/sell/trade transaction.
+- [ ] Loot/reward tables.
+- [ ] Acquisition-path analysis.
 
-## G7. Authoring workspace and publish pipeline
+## G7. Crafting
 
-- [ ] Implement `AuthoringWorkspace`.
-- [ ] Implement mutable draft definitions with revision/concurrency control.
-- [ ] Implement schema validation.
-- [ ] Implement namespace/reference/dependency validation.
-- [ ] Implement ruleset compatibility validation.
-- [ ] Implement provenance/license validation.
-- [ ] Implement graph reachability/static semantic validation.
-- [ ] Implement runtime preview/instantiation validation.
-- [ ] Attach required playtest/simulation evidence.
-- [ ] Implement publish-ready state.
-- [ ] Implement immutable versioned content-pack publication.
-- [ ] Ensure finalized campaigns never reference mutable drafts.
+- [ ] Recipe definitions.
+- [ ] Ingredient/tool requirements.
+- [ ] Scheduled crafting job.
+- [ ] Completion/failure/cancel policies.
+- [ ] Crafted-item grants.
 
-## G8. Creator/DM Studio API foundations
+## G8. Creator workspaces
 
-- [ ] Add authoring schema discovery.
-- [ ] Add draft CRUD/revision APIs for non-authoritative authoring state.
-- [ ] Add validation APIs.
-- [ ] Add preview/test APIs.
-- [ ] Add publication APIs.
-- [ ] Add editor projections for creature/NPC.
-- [ ] Add encounter editor projection.
-- [ ] Add quest graph editor projection.
-- [ ] Add dialogue graph editor projection.
-- [ ] Add world/location/scene editor projection.
-- [ ] Add vendor/recipe/campaign-template editors.
-- [ ] Ensure editor convenience views map to canonical runtime schemas.
+- [ ] `AuthoringWorkspace`.
+- [ ] `DraftDefinition`.
+- [ ] Mutable draft lifecycle.
+- [ ] Draft revision conflict control.
+- [ ] Definition-type schema discovery.
+- [ ] Schema validation.
+- [ ] Namespace/reference validation.
+- [ ] Ruleset compatibility validation.
+- [ ] Provenance/license validation.
+- [ ] Graph/reachability validation.
+- [ ] Runtime preview/instantiation.
+- [ ] Playtest/simulation gate references.
+- [ ] Publish-ready state.
+- [ ] Immutable versioned `PublishedContentPack`.
+- [ ] Pack hashes/manifests/dependencies.
 
-## G9. Narration
+## G9. Creator/DM Studio APIs
 
-- [ ] Define deterministic narration template schema.
-- [ ] Create visibility-filtered `GameMessage` projection.
-- [ ] Link messages to source event IDs/sequence ranges.
-- [ ] Add localization-ready text references.
-- [ ] Ensure narration cannot mutate state.
-- [ ] Keep optional future LLM narrator restricted to paraphrasing visible facts.
+- [ ] Creature/NPC editor API.
+- [ ] Item/equipment editor API.
+- [ ] Ability/spell/power editor API.
+- [ ] Class/species/background editor API.
+- [ ] Progression-tree editor API.
+- [ ] Encounter editor API.
+- [ ] Quest editor API.
+- [ ] Dialogue editor API.
+- [ ] World/location/scene editor API.
+- [ ] Vendor/economy editor API.
+- [ ] Recipe editor API.
+- [ ] Behavior/personality profile editor API.
+- [ ] Campaign-template editor API.
+- [ ] Narration-template editor API.
 
-## G10. Checkpoints/branches
+## G10. Encounter authoring
 
-- [ ] Implement named `CampaignCheckpoint`.
-- [ ] Store sequence/time/content-lock/snapshot reference.
-- [ ] Make checkpoint deletion remove only reference.
-- [ ] Implement branch-from-checkpoint.
-- [ ] Implement branch-from-sequence.
+- [ ] Participant groups.
+- [ ] Spawn rules/positions.
+- [ ] Controller/profile assignments.
+- [ ] Waves.
+- [ ] Triggers.
+- [ ] Objectives.
+- [ ] Environmental effects.
+- [ ] Reinforcements.
+- [ ] Escape/failure/completion conditions.
+- [ ] Rewards.
+- [ ] Scaling policy.
+- [ ] Preview resolved participants/actions/map validity.
+
+## G11. Simulation Quality Lab
+
+- [ ] Simulation-run schema.
+- [ ] Engine/content/controller/seed provenance.
+- [ ] Single encounter simulation.
+- [ ] Batch deterministic simulation.
+- [ ] Outcome/duration/turn metrics.
+- [ ] Damage/healing/resource metrics.
+- [ ] Action-selection frequency.
+- [ ] Objective completion metrics.
+- [ ] Controller/profile comparison.
+- [ ] Matched-seed content-version comparison.
+- [ ] Outlier preservation/reproduction.
+- [ ] No opaque universal balance score.
+
+## G12. Content Testing SDK
+
+- [ ] Validate pack.
+- [ ] Instantiate creature.
+- [ ] Instantiate encounter.
+- [ ] Run scenario.
+- [ ] Run simulation batch.
+- [ ] Analyze quest reachability.
+- [ ] Analyze dialogue reachability.
+- [ ] Analyze progression reachability.
+- [ ] Detect unobtainable item.
+- [ ] Detect unusable ability.
+- [ ] Produce machine-readable `ContentQualityReport`.
+
+## G13. Checkpoints/branches
+
+- [ ] Named checkpoint schema/API.
+- [ ] Reference sequence/time/content lock.
+- [ ] Automatic session-boundary checkpoint policy.
+- [ ] Branch from checkpoint.
+- [ ] Branch from arbitrary permitted sequence.
 - [ ] Preserve parent/fork metadata.
-- [ ] Add automatic session-boundary/pre-migration checkpoint hooks.
+- [ ] Verify identical canonical state at fork.
+- [ ] Checkpoint deletion deletes only reference.
 
-## G11. Recaps/journals
+## G14. Recaps/journals
 
-- [ ] Implement `SessionRecap`.
-- [ ] Implement `CharacterJournal`.
-- [ ] Implement `QuestJournal`.
-- [ ] Implement `DiscoveryJournal`.
-- [ ] Implement `CampaignChronicle`.
-- [ ] Implement NPC encounter history.
-- [ ] Enforce role/visibility filtering.
-- [ ] Keep optional AI summaries non-authoritative.
+- [ ] Session recap projection.
+- [ ] Character journal.
+- [ ] Quest journal.
+- [ ] Discovery journal.
+- [ ] Campaign chronicle.
+- [ ] NPC encounter history.
+- [ ] Visibility filtering.
+- [ ] Optional AI summary seam operating only on structured visible facts.
 
-## G12. Simulation Quality Lab + Content Testing SDK foundation
+## G15. P5 long-form Testing Grounds session
 
-- [ ] Implement isolated simulation job model.
-- [ ] Reuse exact production rules/runtime/controllers.
-- [ ] Implement deterministic seed matrix.
-- [ ] Implement encounter batch runner.
-- [ ] Collect outcome/duration/action/resource/controller/objective metrics.
-- [ ] Preserve outlier seeds.
-- [ ] Implement matched-seed comparison across revisions/profiles.
-- [ ] Implement quest reachability analysis.
-- [ ] Implement dialogue reachability analysis.
-- [ ] Implement progression reachability analysis.
-- [ ] Implement unobtainable item detection where feasible.
-- [ ] Implement unusable ability detection where feasible.
-- [ ] Implement `ContentQualityReport`.
-- [ ] Add programmatic Content Testing SDK entry points.
-- [ ] Promote important failures/outliers to regression fixtures.
-
-## G13. Testing Grounds full content
-
-- [ ] Town: Tavern.
-- [ ] Town: Merchant.
-- [ ] Town: Blacksmith.
-- [ ] Town: Gate.
-- [ ] Forest: Road.
-- [ ] Forest: Hidden Path.
-- [ ] Forest: Goblin Camp.
-- [ ] Forest: Ruins.
-- [ ] Add 2–3 authored NPCs with personality profiles.
-- [ ] Add at least one vendor.
-- [ ] Add at least one crafting recipe.
-- [ ] Add at least two quests.
-- [ ] Add faction/reputation consequence.
-- [ ] Add dialogue branch.
-- [ ] Add hidden/discovery content.
-- [ ] Add scheduled world/NPC event.
-- [ ] Add normal encounter.
-- [ ] Add timed encounter variant.
-- [ ] Connect reward/progression loop.
-
-## G14. P5 playable campaign-session gate
-
-- [ ] DM creates campaign from public Creator/Campaign APIs.
-- [ ] Player is invited/joins.
-- [ ] Player selects/creates character.
-- [ ] Ready check completes.
-- [ ] DM opens session.
+- [ ] DM creates campaign.
+- [ ] Player joins lobby.
+- [ ] Player creates/selects hero.
+- [ ] Ready check.
+- [ ] Session opens.
 - [ ] Player enters town.
-- [ ] Player talks to NPC.
+- [ ] Player talks to Tavern NPC.
 - [ ] Player accepts quest.
-- [ ] Player trades/acquires item.
-- [ ] Player travels/explores/discovers.
-- [ ] Player enters autonomous-NPC encounter.
-- [ ] Player completes encounter and reward.
-- [ ] Quest/faction/progression state updates.
-- [ ] Checkpoint created.
+- [ ] Player visits merchant/blacksmith.
+- [ ] Player buys/sells/receives an item.
+- [ ] Player leaves through gate.
+- [ ] Player travels road/forest.
+- [ ] Player discovers hidden path.
+- [ ] Player interacts with object/container/hazard.
+- [ ] Player reaches Goblin Camp.
+- [ ] Autonomous NPC encounter completes.
+- [ ] Player earns rewards/quest progress.
+- [ ] Player advances character.
+- [ ] DM/player creates checkpoint.
 - [ ] Player disconnects.
-- [ ] Temporary control handoff occurs if configured.
-- [ ] Player reconnects and control is explicitly restored.
+- [ ] Optional temporary NPC-controller handoff executes if configured.
+- [ ] Player reconnects and regains control.
 - [ ] Session closes cleanly.
-- [ ] Recap/journal/history are visible appropriately.
-- [ ] Full journey replays deterministically.
-- [ ] Exact-commit `full` evidence captured.
+- [ ] Recap/journals are generated.
+- [ ] Full campaign replays deterministically.
+- [ ] Local `full`/`replay` evidence captured.
 
-## G15. P6 creator-to-game gate
+## G16. P6 creator-to-game flow
 
 - [ ] Creator opens workspace.
-- [ ] Creator drafts at least NPC/encounter/quest/item or ability content.
-- [ ] Invalid reference is caught and corrected.
-- [ ] Reachability/static checks run.
+- [ ] Creator drafts NPC + personality + behavior profile.
+- [ ] Creator drafts item/ability.
+- [ ] Creator drafts quest/dialogue.
+- [ ] Creator drafts encounter/world content.
+- [ ] Invalid version fails validation with useful diagnostics.
+- [ ] Creator fixes invalid data.
+- [ ] Reachability/static quality checks pass.
 - [ ] Encounter simulation runs.
-- [ ] Human playtest runs against candidate content.
-- [ ] Pack becomes publish-ready only after gates.
-- [ ] Immutable pack version is published.
-- [ ] Campaign is created using published pack.
-- [ ] Player completes authored content through public gameplay interfaces.
-- [ ] Quality report/evidence points to exact content/version.
-- [ ] Exact-commit `full` + `simulation` evidence captured.
+- [ ] Creator reproduces selected outlier seed.
+- [ ] Human playtest scenario runs against draft preview.
+- [ ] Content pack publishes immutably.
+- [ ] Campaign created from published pack.
+- [ ] P5 session plays authored content end to end.
+- [ ] Local full/simulation/playtest evidence captured.
 
 ---
 
-# 11. Phase H — Advanced/external AI controllers (v0.8)
+# 11. Phase H — Advanced/external controllers (v0.8)
 
-- [ ] Implement richer utility controller using same visible decision view.
-- [ ] Add goals/tactical scoring beyond baseline one-step profiles.
-- [ ] Add optional memory constrained to actor-permitted knowledge.
-- [ ] Add richer schedule/planning policy seams.
-- [ ] Implement external controller intent-to-command adapter.
-- [ ] Add timeout/circuit breaker.
-- [ ] Add fallback to SimpleNpcController.
-- [ ] Add controller handoff/reconnect semantics.
-- [ ] Add AI DM privileged-command surface with normal authorization/audit.
-- [ ] Add optional LLM adapter only behind controller boundary.
-- [ ] Ensure LLM output cannot mutate state directly.
-- [ ] Add deterministic scripted fixtures for external-controller tests.
-- [ ] Add simulation comparisons simple vs advanced controller with matched seeds.
-- [ ] Preserve SimpleNpcController as reference/fallback.
-- [ ] Capture targeted local evidence.
+Goal: add richer intelligence without destabilizing SimpleNpcController or earlier playable gates.
 
----
+## H1. Advanced controller framework
 
-# 12. Phase I — Stable universal APIs/SDKs (v0.9)
+- [ ] Rich utility scoring.
+- [ ] Explicit goals.
+- [ ] Persistent bounded memories.
+- [ ] Tactical scoring.
+- [ ] Schedule integration.
+- [ ] Controller budget/deadline.
+- [ ] Deterministic fallback to SimpleNpcController.
 
-## I1. Game client API
+## H2. External/LLM controller seam
 
-- [ ] Stabilize `/api/v1` command/query surface.
-- [ ] Stabilize error/version/deprecation contract.
-- [ ] Complete OpenAPI examples.
-- [ ] Complete auth/authorization.
-- [ ] Complete character/campaign creator discovery.
-- [ ] Complete available-action/target discovery.
-- [ ] Complete historical cursor/as-of queries.
-- [ ] Complete WebSocket subscribe/resume/backpressure/snapshot+delta.
-- [ ] Complete movement trajectory contract.
-- [ ] Complete localization/units/accessibility metadata.
-- [ ] Complete asset refs/import/export.
-- [ ] Complete rate-limit/idempotent retry semantics.
+- [ ] Typed visible controller context.
+- [ ] Typed response/intent schema.
+- [ ] Translator to ordinary commands.
+- [ ] Timeout/circuit breaker.
+- [ ] Invalid-output handling.
+- [ ] No direct authoritative state mutation.
+- [ ] No hidden/omniscient context.
+- [ ] Replay does not require recalling service.
+- [ ] External result provenance/versioning where required.
+- [ ] Local tests use fixtures/fakes; no external model required for core release tests.
 
-## I2. Creator/operations APIs
+## H3. Controller quality lab
 
-- [ ] Stabilize authoring/workspace/schema-discovery APIs.
-- [ ] Stabilize lobby/session/control APIs.
-- [ ] Stabilize checkpoint/branch APIs.
-- [ ] Stabilize recap/journal APIs.
-- [ ] Stabilize simulation/quality job APIs.
-- [ ] Stabilize content diff/impact/migration-preview APIs.
-- [ ] Stabilize extension capability/admin APIs.
-
-## I3. SDKs/reference clients
-
-- [ ] Build Python SDK.
-- [ ] Add generated/open contract tests.
-- [ ] Build reference terminal client.
-- [ ] Build reference WebSocket client.
-- [ ] Ensure reference clients contain presentation/workflow logic but not hidden rules.
-- [ ] Add Creator/Content Testing SDK/CLI commands.
-
-## I4. Stable testing interface
-
-- [ ] Stabilize `scripts/test` CLI.
-- [ ] Stabilize profile manifest format.
-- [ ] Stabilize `TestEvidenceBundle` schema/version.
-- [ ] Support in-process target.
-- [ ] Support normal local server target.
-- [ ] Support containerized target.
-- [ ] Support authorized remote test target if configured.
-- [ ] Ensure the same scenario definitions can run across targets.
+- [ ] Simple-vs-utility matched-seed comparison.
+- [ ] Profile comparisons.
+- [ ] Fallback scenarios.
+- [ ] External timeout/error scenarios.
+- [ ] Human-vs-advanced-controller playtest.
+- [ ] Ensure all P0–P6 gates remain green locally.
 
 ---
 
-# 13. Phase J — Content migration and evolution (v0.9-v1.0)
+# 12. Phase I — Stable universal client / creator / operations API (v0.9)
 
-Goal: achieve P7.
+Goal: stabilize interfaces so independent clients/tools can depend on them.
 
-## J1. Semantic diff/compatibility
+## I1. REST stability
+
+- [ ] `/api/v1` stable routing.
+- [ ] OpenAPI quality/review.
+- [ ] API response envelopes.
+- [ ] API error schema.
+- [ ] Opaque cursor pagination.
+- [ ] Request/correlation IDs.
+- [ ] Version/deprecation rules.
+- [ ] Idempotent retry documentation.
+
+## I2. Authentication/authorization
+
+- [ ] Authentication provider boundary.
+- [ ] Campaign membership authorization.
+- [ ] Actor-control authorization.
+- [ ] DM/admin permissions.
+- [ ] Authoring/publish permissions.
+- [ ] Simulation permissions.
+- [ ] Extension administration permissions.
+- [ ] Audit coverage.
+- [ ] Rate limiting/abuse-control seam.
+
+## I3. WebSocket stability
+
+- [ ] Connection handshake.
+- [ ] Subscription model.
+- [ ] Ordered event delivery.
+- [ ] ACK/resume.
+- [ ] Snapshot+delta resync.
+- [ ] Visibility filtering before queue.
+- [ ] Bounded buffers.
+- [ ] Coalescing replaceable projection updates.
+- [ ] Never silently drop authoritative events.
+- [ ] Slow-client disconnect/resume behavior.
+
+## I4. Client discovery
+
+- [ ] Ruleset/capabilities endpoint.
+- [ ] Character-creation schema.
+- [ ] Available actions/targets.
+- [ ] Creator schema discovery.
+- [ ] Session/lobby status.
+- [ ] Controller assignment/status without hidden decision data.
+- [ ] Localization/UI metadata.
+- [ ] Unit metadata.
+- [ ] Asset refs.
+
+## I5. SDK/reference clients
+
+- [ ] Python SDK.
+- [ ] Terminal reference client.
+- [ ] WebSocket example client.
+- [ ] Creator/Content Testing CLI.
+- [ ] All clients remain thin.
+- [ ] Same local playtest scenarios can target reference clients where practical.
+
+## I6. Local test execution stability
+
+- [ ] Stable local `scripts/test` CLI.
+- [ ] Stable profile manifest.
+- [ ] Stable TestEvidenceBundle schema.
+- [ ] In-process target.
+- [ ] Local-server target.
+- [ ] Containerized local target.
+- [ ] No GitHub Actions or remote CI target.
+
+---
+
+# 13. Phase J — Content evolution/migrations (v0.9/P7)
+
+Goal: achieve **P7**, safely update live campaign content without destroying replayability.
+
+## J1. Semantic content diff
+
+- [ ] Added definitions.
+- [ ] Removed definitions.
+- [ ] Changed definitions.
+- [ ] Dependency changes.
+- [ ] Ruleset compatibility changes.
+- [ ] License/provenance changes.
+- [ ] Mechanic-affecting vs presentation-only classification.
+
+## J2. Campaign impact report
+
+- [ ] Affected actors.
+- [ ] Affected character progression.
+- [ ] Affected items/inventories.
+- [ ] Affected quests/dialogue.
+- [ ] Affected encounters/world state.
+- [ ] Affected controller profiles.
+- [ ] Affected scheduled events/effects.
+- [ ] Unsafe/ambiguous conditions surfaced.
+
+## J3. Migration plan
+
+- [ ] Typed content migration descriptors.
+- [ ] Character/content-reference remaps.
+- [ ] State transformations.
+- [ ] Controller-profile transformations.
+- [ ] Validation before execution.
+- [ ] Reverse migration declared when valid.
+
+## J4. Dry-run
 
 - [ ] Resolve candidate content lock.
-- [ ] Generate semantic definition diff.
-- [ ] Classify additive/changed/removed definitions.
-- [ ] Detect ruleset/engine incompatibilities.
-- [ ] Generate `CompatibilityReport`.
-- [ ] Generate `CampaignContentImpactReport`.
-- [ ] Identify affected actors/items/quests/progression/encounters/controllers.
-
-## J2. Migration plan/dry run
-
-- [ ] Define typed `ContentMigrationPlan`.
-- [ ] Define state transformations separately from DB/event schema migrations.
-- [ ] Validate extension/controller compatibility.
-- [ ] Create isolated copy/branch for dry run.
-- [ ] Run migration.
+- [ ] Create isolated copy/branch.
+- [ ] Apply migration.
 - [ ] Rebuild projections.
-- [ ] Run targeted replay.
-- [ ] Run required human-play scenarios.
-- [ ] Run simulation/quality checks.
-- [ ] Produce dry-run evidence report.
+- [ ] Run replay validation.
+- [ ] Run affected playtests.
+- [ ] Run affected simulation/reachability checks.
+- [ ] Produce machine-readable report.
 
-## J3. Activation/recovery
+## J5. Activation/recovery
 
-- [ ] Create automatic pre-upgrade checkpoint.
-- [ ] Atomically activate content revision/lock.
-- [ ] Preserve old history under old lock.
-- [ ] Verify new events use new lock.
-- [ ] Verify replay crosses lock boundary correctly.
-- [ ] Implement safe reverse migration only where explicitly valid.
-- [ ] Otherwise require branch from pre-upgrade checkpoint.
-- [ ] Audit content activation and rollback/branch operations.
+- [ ] Automatic pre-upgrade checkpoint.
+- [ ] Atomic content-lock activation.
+- [ ] Persist migration metadata.
+- [ ] Verify post-activation replay.
+- [ ] Rollback when reverse migration is valid.
+- [ ] Otherwise branch from pre-upgrade checkpoint.
+- [ ] Never silently auto-upgrade active campaign mechanics.
 
-## J4. P7 content-evolution gate
+## J6. P7 Testing Grounds
 
-- [ ] Play campaign before update.
-- [ ] Propose updated pack.
-- [ ] Review semantic diff/impact.
+- [ ] Play existing campaign under old pack.
+- [ ] Publish new pack version.
+- [ ] Generate semantic diff.
+- [ ] Generate impact report.
 - [ ] Dry-run migration.
-- [ ] Run required play/simulation checks.
-- [ ] Create automatic checkpoint.
+- [ ] Required simulations/playtests pass locally.
+- [ ] Automatic checkpoint created.
 - [ ] Activate revision.
-- [ ] Continue play using new revision.
-- [ ] Inspect old and new history with correct definitions.
-- [ ] Replay full campaign deterministically across boundary.
-- [ ] Demonstrate safe rollback or branch path.
-- [ ] Capture exact-commit `migration` + `replay` + `full` evidence.
+- [ ] Continue playing updated content.
+- [ ] Replay pre-change history with old definitions.
+- [ ] Replay post-change history with new definitions.
+- [ ] Demonstrate rollback or safe branch behavior.
+- [ ] Local migration/replay/full evidence captured.
 
 ---
 
-# 14. Phase K — Production hardening (v1.0)
+# 14. Phase K — Production/release hardening (v1.0/P8)
 
-## K1. Security/visibility
+Goal: achieve **P8**, a production-ready playable platform whose release is proven locally.
 
-- [ ] Complete permission matrix.
-- [ ] Complete visibility golden tests.
-- [ ] Prove spectators/players/controllers cannot see hidden DM data.
-- [ ] Validate all imported/authored content as untrusted data.
-- [ ] Prove ordinary content packs cannot execute code.
-- [ ] Prove trusted extensions require explicit authorized installation.
-- [ ] Ensure secrets are absent from events/logs/exports/evidence.
-- [ ] Add abuse/rate-limit tests.
+## K1. Reliability
 
-## K2. Reliability/recovery
+- [ ] Backup process.
+- [ ] Automated restore test.
+- [ ] Crash/restart during idle campaign.
+- [ ] Crash/restart during scheduled action.
+- [ ] Crash/restart during decision window.
+- [ ] Outbox recovery without duplicate publication.
+- [ ] Projection rebuild/recovery.
+- [ ] Database reconnect/error behavior.
 
-- [ ] Document backup procedure.
-- [ ] Automate backup.
-- [ ] Automate clean restore verification.
-- [ ] Verify event/projection hashes after restore.
-- [ ] Test restart with pending scheduled events.
-- [ ] Test restart during decision window.
-- [ ] Test restart while NPC controller is eligible.
-- [ ] Test outbox recovery/no duplicate publication consequences.
-- [ ] Test DB reconnect behavior.
-- [ ] Test WebSocket reconnect/resync.
+## K2. Security
+
+- [ ] Permission matrix tests.
+- [ ] Visibility leak audit.
+- [ ] Controller-view leak audit.
+- [ ] Import validation/security.
+- [ ] Content pack cannot execute code.
+- [ ] Trusted extension capability audit.
+- [ ] Rate-limit/abuse tests.
+- [ ] Secret/log redaction tests.
 
 ## K3. Observability
 
-- [ ] Structured operational logging.
-- [ ] Request/correlation/command/event trace continuity.
-- [ ] Metrics for command/event/projection/scheduler/controller/WebSocket paths.
-- [ ] Metrics for authoring validation/simulation/migration/test execution.
-- [ ] Health/readiness reflects critical dependency state.
-- [ ] Add actionable failure diagnostics without hidden data leakage.
+- [ ] Structured command/event logging.
+- [ ] Correlation IDs.
+- [ ] Scheduler metrics.
+- [ ] Controller metrics.
+- [ ] WebSocket metrics.
+- [ ] Simulation metrics.
+- [ ] Migration metrics.
+- [ ] Health/readiness meaningful dependencies.
 
 ## K4. Performance
 
-- [ ] Define benchmark fixtures/workloads.
-- [ ] Measure command p50/p95/p99.
-- [ ] Measure event append throughput.
-- [ ] Measure replay throughput.
-- [ ] Measure projection lag.
-- [ ] Measure WebSocket fanout/backpressure.
-- [ ] Measure controller decision latency.
-- [ ] Measure simulation throughput.
-- [ ] Define acceptable target profile from measured evidence.
-- [ ] Prevent unbounded CPU/memory use in simulation/import/replay paths.
+- [ ] Define representative benchmark campaigns.
+- [ ] Command throughput benchmark.
+- [ ] Event append benchmark.
+- [ ] Projection rebuild benchmark.
+- [ ] Replay benchmark.
+- [ ] WebSocket fanout benchmark.
+- [ ] Scheduler benchmark.
+- [ ] Simulation throughput benchmark.
+- [ ] Establish budgets/baselines.
+- [ ] Local performance evidence reproducible.
 
-## K5. Documentation/release
+## K5. Packaging/deployment
 
-- [ ] README from clean checkout to playable session.
-- [ ] Architecture docs current.
-- [ ] API docs/examples current.
-- [ ] Creator docs current.
-- [ ] Local test-agent docs current.
-- [ ] Deployment/backup/migration docs current.
-- [ ] License/attribution correct.
-- [ ] Release/version/deprecation policy documented.
-- [ ] Sample campaign/content included.
-- [ ] Reference terminal client included.
-- [ ] Known limitations explicitly documented.
+- [ ] Reproducible package/container build.
+- [ ] Production configuration documentation.
+- [ ] Migration/rollback operating procedure.
+- [ ] Backup/restore operating procedure.
+- [ ] Health/readiness deployment example.
+- [ ] License/attribution package.
+- [ ] Version/release policy.
+- [ ] No GitHub Actions release/deployment automation.
 
----
+## K6. P8 release acceptance
 
-# 15. P8 release acceptance
-
-The exact release candidate must demonstrate all required behavior through machine-produced evidence.
-
-## Gameplay
-
-- [ ] Rules/content discovery and lock creation.
-- [ ] Campaign creation/configuration.
-- [ ] Lobby/membership/ready/session lifecycle.
-- [ ] Character creation and higher-level/progression paths.
-- [ ] Exploration/perception/discovery/world objects.
-- [ ] Dialogue/social/quests/factions.
-- [ ] Inventory/trade/crafting/rewards.
-- [ ] Combat/action/reaction/timing modes.
-- [ ] SimpleNpcController autonomy/visibility/fallback.
-- [ ] Disconnect/reconnect/control handoff.
-- [ ] Logs/history/replay.
-- [ ] WebSocket resume/resync/backpressure.
-
-## Creator/quality
-
-- [ ] Authoring workspace/draft lifecycle.
-- [ ] Validation errors detected/corrected.
-- [ ] Encounter/NPC/personality/controller authoring.
-- [ ] Reachability/content quality checks.
-- [ ] Deterministic simulation batch/outlier reproduction.
-- [ ] Immutable publication.
-- [ ] Published content playable end to end.
-
-## Evolution/extensions
-
-- [ ] Data-only pack code-execution prohibition demonstrated.
-- [ ] Trusted extension admin/capability boundary demonstrated.
-- [ ] Semantic diff/impact report demonstrated.
-- [ ] Migration dry run demonstrated.
-- [ ] Automatic checkpoint + activation demonstrated.
-- [ ] Replay across content lock boundary demonstrated.
-- [ ] Safe rollback/branch behavior demonstrated.
-
-## Recovery/performance
-
-- [ ] Backup/restore verification.
-- [ ] Restart recovery.
-- [ ] Persistence/outbox recovery.
-- [ ] Visibility/security audit scenarios.
-- [ ] Defined performance profile passes or documented release thresholds are met.
-
-## Evidence
-
-- [ ] `release` TestEvidenceBundle exists.
-- [ ] Evidence commit SHA exactly equals release candidate.
-- [ ] Dirty worktree is false.
-- [ ] No mandatory suite is blocked.
-- [ ] No unexpected mandatory test is skipped.
-- [ ] Failure/outlier artifacts are reproducible.
-- [ ] Coverage manifest has no unexplained user-visible feature gaps.
+- [ ] All P0–P7 gates still pass locally.
+- [ ] Complete gameplay acceptance matrix executable.
+- [ ] Complete creator/session/quality acceptance executable.
+- [ ] Security/visibility suite passes locally.
+- [ ] Backup/restore/recovery suite passes locally.
+- [ ] Migration/replay suite passes locally.
+- [ ] Simulation/content-quality gates pass locally.
+- [ ] Performance profile satisfies documented release budgets.
+- [ ] Exact release commit has local `release` TestEvidenceBundle.
+- [ ] Release evidence uses clean worktree.
+- [ ] No unexplained required-suite skips/blocks.
+- [ ] `.github/workflows/` absent/empty.
 
 ---
 
-# 16. Continuous Testing Grounds story
+# 15. Continuous Testing Grounds story
 
-Do not allow Testing Grounds to become disconnected fixtures. Maintain one cumulative story whose steps grow with the engine:
+The reference campaign must evolve cumulatively rather than being replaced by disconnected fixtures.
+
+Target story:
 
 ```text
-1. Creator publishes/installs required rules/content.
-2. DM creates Testing Grounds campaign.
-3. DM invites player.
-4. Player creates/selects hero.
-5. Ready check and session open.
-6. Hero appears in Town.
-7. Hero enters Tavern and speaks with NPC.
-8. Hero accepts a quest.
-9. Hero visits Merchant/Blacksmith and trades/acquires useful item.
-10. Hero leaves through Gate.
-11. Hero travels Road and discovers Hidden Path or fact.
-12. Hero interacts with object/container/hazard.
-13. Hero reaches Goblin Camp.
-14. Encounter begins with autonomous SimpleNpcController opponents.
-15. Hero moves/attacks/uses ability/resource/item.
-16. NPCs independently move/attack/react using visible legal information only.
-17. Hero intentionally exercises one timeout/reconnect edge case in a dedicated variant.
-18. Encounter completes and rewards apply.
-19. Quest/faction/relationship state updates.
-20. Hero advances/unlocks progression.
-21. Campaign checkpoint is created.
-22. Player disconnects; optional temporary AI control occurs.
-23. Player reconnects; control is explicitly restored.
-24. Party returns/continues into Ruins or town follow-up.
-25. DM closes session.
-26. Recap/journal/chronicle are generated as projections.
-27. Campaign replay reaches identical canonical state.
-28. In creator-evolution variant, content update is diffed/dry-run/activated and play continues.
+The Testing Grounds
+
+Town
+├── Tavern
+│   ├── Quest giver
+│   └── social/dialogue checks
+├── Merchant
+│   └── buy/sell/trade
+├── Blacksmith
+│   └── equipment/crafting hook
+└── Gate
+    ↓
+Road
+├── travel/time event
+├── hidden path discovery
+└── Forest
+    ├── interactable container/object
+    └── Goblin Camp
+        ├── SimpleNpcController enemies
+        ├── combat objective
+        └── quest/reward
+            ↓
+Ruins
+├── hazard/object
+├── second encounter
+└── progression/content-evolution hooks
 ```
 
-Every milestone that touches one of these steps should extend or strengthen the same long-form scenario rather than replacing it with unrelated one-off tests.
-
----
-
-# 17. Agent completion checklist per TODO item
-
-Before checking a TODO item complete:
-
-- [ ] The implementation matches `PLAN.md` and relevant normative spec.
-- [ ] Types/schemas are explicit and versioned where required.
-- [ ] Async paths are non-blocking.
-- [ ] No direct gameplay DB/state mutation bypass was introduced.
-- [ ] Visibility/security boundary is correct.
-- [ ] Determinism/replay implications were considered.
-- [ ] Unit/integration test exists where appropriate.
-- [ ] Human-play scenario exists when user-visible.
-- [ ] NPC controller scenario exists when autonomy changes.
-- [ ] Authoring validation exists when content schemas change.
-- [ ] Simulation/reachability check exists when content quality can be checked programmatically.
-- [ ] Migration/upcaster fixture exists when persistent interpretation changes.
-- [ ] Coverage manifest was updated.
-- [ ] Required canonical local profile was identified.
-- [ ] Exact-commit execution evidence exists for verification checkboxes.
-- [ ] No unsupported claim of “tests pass” was made.
-- [ ] Documentation/examples were updated if public workflow changed.
-
----
-
-# 18. What agents must not do
-
-- Do not skip directly to large content imports before runtime schemas/tests exist.
-- Do not implement a second hidden rules engine in clients, playtests, NPC AI, or simulation tooling.
-- Do not make baseline NPC gameplay depend on an LLM or cloud API.
-- Do not give NPC controllers omniscient state.
-- Do not use real sleeps to represent game time in tests.
-- Do not let Creator Studio mutate live gameplay state as an editor shortcut.
-- Do not let mutable drafts enter finalized campaign locks.
-- Do not let ordinary content packs execute arbitrary code.
-- Do not destructively rewrite history for “save restore.”
-- Do not silently auto-upgrade active campaign mechanics.
-- Do not hide required skipped/blocked tests.
-- Do not mark execution gates done without revision-matched evidence.
-- Do not replace the continuous Testing Grounds journey with isolated happy-path API calls.
-- Do not mark a milestone complete while its required playable gate is broken.
-
----
-
-# 19. Immediate next work
-
-Unless the user explicitly directs otherwise, begin with **Phase A / A1**, then proceed in order toward P0 and P1.
-
-The first implementation objective is therefore:
+Required cumulative human story:
 
 ```text
-bootable Python/FastAPI project
-    -> canonical test runner/evidence skeleton
-    -> deterministic IDs/commands/events/RNG
-    -> minimal campaign/actor
-    -> event store/replay/idempotency
-    -> public command/query path
-    -> black-box playtest harness
-    -> P0/P1 locally evidenced
+create campaign
+-> create hero
+-> join/open session
+-> talk in tavern
+-> accept quest
+-> trade/equip
+-> travel
+-> discover hidden path
+-> interact with world object
+-> fight autonomous enemies
+-> receive reward
+-> progress hero
+-> checkpoint
+-> disconnect/reconnect
+-> close session
+-> inspect recap
+-> replay
+-> later upgrade content and continue play
 ```
 
-Only after that foundation is stable should the project proceed into the v0.2 scheduler and then the v0.3 **P2 playable human-vs-autonomous-NPC combat slice**.
+Every major subsystem should attach to this story when practical.
+
+---
+
+# 16. Feature coverage manifest
+
+Maintain a machine-readable mapping from implemented feature to proof.
+
+Conceptual record:
+
+```text
+FeatureCoverage
+    feature_id
+    milestone
+    implementation_paths[]
+    unit_tests[]
+    integration_tests[]
+    playtest_scenarios[]
+    controller_tests[]
+    simulation_checks[]
+    reachability_checks[]
+    migration_fixtures[]
+    roles[]
+    timing_modes[]
+    spatial_adapters[]
+    visibility_cases[]
+    negative_cases[]
+    reconnect_cases[]
+    replay_cases[]
+    required_local_profiles[]
+    last_local_evidence_id | null
+```
+
+A feature with no applicable public-play or negative-path proof must state why.
+
+---
+
+# 17. Definition of done for a TODO implementation item
+
+A normal implementation checkbox may be checked when:
+
+- implementation exists;
+- schemas/types/docs required by the item exist;
+- tests/scenarios required by that item exist;
+- relevant static review has been performed;
+- it does not knowingly break an earlier playability gate.
+
+If the checkbox itself says evidence/pass/verified, or is a playability/milestone execution gate, it additionally requires exact-commit local test evidence.
+
+Never convert `[AWAITING EVIDENCE]` to `[x]` merely because another remote agent says it should pass.
+
+---
+
+# 18. Local execution handoff checklist
+
+Before asking the local test agent to run a candidate:
+
+- [ ] Candidate commit SHA is known.
+- [ ] Required profile(s) are named.
+- [ ] Environment prerequisites are documented.
+- [ ] PostgreSQL/other local services required are documented.
+- [ ] Seed/content/controller fixtures are versioned.
+- [ ] Expected artifacts are specified.
+- [ ] Evidence output path is deterministic.
+- [ ] No secrets are required in evidence.
+- [ ] No GitHub Actions workflow is required or present.
+
+Local-agent result should provide:
+
+```text
+commit SHA
+profile
+status
+suite counts
+failed/blocked/skipped suites
+reproducible failure artifacts
+playtest/simulation seeds
+canonical replay hashes where applicable
+evidence bundle path/id
+```
+
+---
+
+# 19. Final product acceptance
+
+The project is not finished when all data models exist.
+
+It is finished when a clean deployment can be used by a real or reference client to:
+
+- create/load a game;
+- create/control a character;
+- play through exploration, social, quest, economy and combat loops;
+- encounter autonomous non-human actors;
+- progress and persist;
+- disconnect/reconnect/recover;
+- inspect history/recaps;
+- replay deterministically;
+- create/test/publish custom content;
+- safely evolve that content in a running campaign;
+- and prove all of this with reproducible exact-commit **local** execution evidence.
+
+That is what the implementation queue is optimizing for.
