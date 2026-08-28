@@ -43,11 +43,18 @@ class DeterministicRng:
         rng = self._stream(stream)
         rolls = tuple(rng.randint(1, sides) for _ in range(count))
         self._sequence[stream] += 1
-        return DiceResult(
-            expression=expression,
-            rolls=rolls,
-            modifier=modifier,
-            total=sum(rolls) + modifier,
-            rng_stream=stream,
-            rng_sequence=self._sequence[stream],
-        )
+        return DiceResult(expression=expression, rolls=rolls, modifier=modifier, total=sum(rolls) + modifier, rng_stream=stream, rng_sequence=self._sequence[stream])
+
+    def replay_roll(self, expression: str, expected_rolls: tuple[int, ...] | list[int], *, stream: str = "dice", expected_sequence: int | None = None) -> DiceResult:
+        """Advance a stream while proving stored random evidence still matches the seed."""
+        result = self.roll(expression, stream=stream)
+        expected = tuple(int(value) for value in expected_rolls)
+        if result.rolls != expected:
+            raise ValueError(f"deterministic RNG replay mismatch on stream {stream}: expected {expected}, got {result.rolls}")
+        if expected_sequence is not None and result.rng_sequence != expected_sequence:
+            raise ValueError(f"deterministic RNG sequence mismatch on stream {stream}: expected {expected_sequence}, got {result.rng_sequence}")
+        return result
+
+    def sequence(self, stream: str = "dice") -> int:
+        self._stream(stream)
+        return self._sequence[stream]

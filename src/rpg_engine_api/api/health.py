@@ -11,8 +11,5 @@ async def health() -> dict[str, str]:
 @router.get("/ready")
 async def ready(request: Request) -> dict[str, object]:
     settings = request.app.state.settings
-    return {
-        "status": "ready",
-        "persistence_backend": settings.persistence_backend,
-        "postgres_configured": settings.postgres_configured,
-    }
+    recovered = bool(getattr(request.app.state, "recovery_complete", False))
+    return {"status": "ready" if recovered else "starting", "persistence_backend": settings.persistence_backend, "postgres_configured": settings.postgres_configured, "recovery_complete": recovered}

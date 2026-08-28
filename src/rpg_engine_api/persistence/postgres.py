@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Iterable
 
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, UniqueConstraint, delete, func, insert, select, update
@@ -8,39 +9,21 @@ from rpg_engine_api.domain.events import DomainEvent
 from rpg_engine_api.persistence.event_store import StreamVersionConflict
 
 metadata = MetaData()
-
 event_streams = Table("event_streams", metadata, Column("stream_id", String(255), primary_key=True), Column("version", Integer, nullable=False, default=0))
-
-domain_events = Table(
-    "domain_events", metadata,
-    Column("sequence", BigInteger, primary_key=True, autoincrement=True),
-    Column("event_id", String(128), nullable=False, unique=True),
-    Column("stream_id", String(255), nullable=False, index=True),
-    Column("stream_version", Integer, nullable=False),
-    Column("campaign_id", String(128), nullable=False, index=True),
-    Column("event_type", String(128), nullable=False, index=True),
-    Column("event_json", Text, nullable=False),
-    UniqueConstraint("stream_id", "stream_version", name="uq_domain_events_stream_version"),
-)
-
-command_receipts = Table(
-    "command_receipts", metadata,
-    Column("idempotency_key", String(255), primary_key=True),
-    Column("command_id", String(128), nullable=False),
-    Column("request_fingerprint", String(64), nullable=True),
-    Column("receipt_json", Text, nullable=False),
-)
-
+domain_events = Table("domain_events", metadata, Column("sequence", BigInteger, primary_key=True, autoincrement=True), Column("event_id", String(128), nullable=False, unique=True), Column("stream_id", String(255), nullable=False, index=True), Column("stream_version", Integer, nullable=False), Column("campaign_id", String(128), nullable=False, index=True), Column("event_type", String(128), nullable=False, index=True), Column("event_json", Text, nullable=False), UniqueConstraint("stream_id", "stream_version", name="uq_domain_events_stream_version"))
+command_receipts = Table("command_receipts", metadata, Column("idempotency_key", String(255), primary_key=True), Column("command_id", String(128), nullable=False), Column("request_fingerprint", String(64), nullable=True), Column("receipt_json", Text, nullable=False))
 snapshots = Table("snapshots", metadata, Column("stream_id", String(255), primary_key=True), Column("stream_version", Integer, nullable=False), Column("schema_version", String(32), nullable=False), Column("snapshot_json", Text, nullable=False))
 projection_checkpoints = Table("projection_checkpoints", metadata, Column("projection_name", String(255), primary_key=True), Column("schema_version", String(32), nullable=False), Column("last_sequence", BigInteger, nullable=False))
 outbox_events = Table("outbox_events", metadata, Column("id", BigInteger, primary_key=True, autoincrement=True), Column("event_id", String(128), nullable=False, unique=True), Column("payload_json", Text, nullable=False), Column("published_at", String(64), nullable=True))
 
 
 class PostgresEventStore:
-    """Async PostgreSQL event store used by integration/deployment paths."""
+    """Async PostgreSQL event store with same-process live subscriptions."""
 
     def __init__(self, database_url: str) -> None:
         self.engine: AsyncEngine = create_async_engine(database_url, pool_pre_ping=True)
+        self._subscribers: set[asyncio.Queue[DomainEvent]] = set()
+        self._overflowed_subscribers: set[asyncio.Queue[DomainEvent]] = set()
 
     async def prepare(self) -> None:
         async with self.engine.begin() as connection:
@@ -79,6 +62,15 @@ class PostgresEventStore:
                 await connection.execute(insert(outbox_events).values(event_id=event.event_id, payload_json=event.model_dump_json()))
                 stored.append(event)
             await connection.execute(update(event_streams).where(event_streams.c.stream_id == stream_id).values(version=version))
+        subscribers = tuple(self._subscribers)
+        for event in stored:
+            for queue in subscribers:
+                if queue in self._overflowed_subscribers:
+                    continue
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    self._overflowed_subscribers.add(queue)
         return tuple(stored)
 
     async def read_stream(self, stream_id: str) -> tuple[DomainEvent, ...]:
@@ -123,6 +115,18 @@ class PostgresEventStore:
             existing = await connection.scalar(select(command_receipts.c.idempotency_key).where(command_receipts.c.idempotency_key == key))
             if existing is None:
                 await connection.execute(insert(command_receipts).values(idempotency_key=key, command_id=receipt.command_id, request_fingerprint=fingerprint, receipt_json=receipt.model_dump_json()))
+
+    def subscribe(self, *, maxsize: int = 256) -> asyncio.Queue[DomainEvent]:
+        queue: asyncio.Queue[DomainEvent] = asyncio.Queue(maxsize=maxsize)
+        self._subscribers.add(queue)
+        return queue
+
+    def subscription_overflowed(self, queue: asyncio.Queue[DomainEvent]) -> bool:
+        return queue in self._overflowed_subscribers
+
+    def unsubscribe(self, queue: asyncio.Queue[DomainEvent]) -> None:
+        self._subscribers.discard(queue)
+        self._overflowed_subscribers.discard(queue)
 
     async def clear_for_test(self) -> None:
         async with self.engine.begin() as connection:
