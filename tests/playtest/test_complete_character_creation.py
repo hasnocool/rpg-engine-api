@@ -1,0 +1,12 @@
+import pytest
+from .harness import Persona,PlaytestClient
+
+@pytest.mark.playtest
+@pytest.mark.asyncio
+async def test_richer_character_creation_equipment_and_rest() -> None:
+    client=PlaytestClient(Persona(name="Player",principal_id="player"))
+    try:
+        await client.command("CreateCampaign",payload={"campaign_id":"cmp_char_full","seed":77});await client.command("StartCharacterCreation",campaign_id="cmp_char_full",payload={"creation_id":"cc_full"});await client.command("SelectCharacterName",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","name":"Mira"});await client.command("SelectCharacterClass",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","class_id":"mage"});await client.command("SelectCharacterSubclass",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","subclass_id":"sage"});await client.command("SelectCharacterSpecies",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","species":"elf"});await client.command("SelectCharacterBackground",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","background":"scholar"});await client.command("SelectCharacterAbilities",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","ability_scores":{"intelligence":15,"dexterity":14,"wisdom":13,"constitution":12,"charisma":10,"strength":8}});await client.command("SelectCharacterProficiencies",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","proficiencies":["arcana","history"]});await client.command("SelectCharacterEquipmentSet",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","equipment_set":"scholar"});await client.command("SelectCharacterPreparedAbilities",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","prepared_abilities":["arcane_bolt","ward"]});await client.command("FinalizeCharacterCreation",campaign_id="cmp_char_full",payload={"creation_id":"cc_full","actor_id":"mira"})
+        actor=(await client.get("/api/v1/actors/mira"))["data"];assert actor["class_id"]=="mage" and actor["subclass_id"]=="sage" and actor["ability_scores"]["intelligence"]==15 and actor["prepared_abilities"]==["arcane_bolt","ward"] and actor["equipment"]["weapon"]=="starter:staff"
+        await client.command("TakeRest",campaign_id="cmp_char_full",actor_id="mira",payload={"rest_type":"long"});actor=(await client.get("/api/v1/actors/mira"))["data"];assert actor["current_hp"]==actor["max_hp"] and actor["resources"]["spell_slots"]==2
+    finally:await client.close()
