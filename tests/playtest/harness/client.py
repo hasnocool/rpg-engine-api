@@ -16,20 +16,20 @@ class PlaytestClient:
         self.app = app or create_app(Settings())
         self.http = AsyncClient(transport=ASGITransport(app=self.app), base_url="http://playtest")
 
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"x-principal-id": self.persona.principal_id, "x-principal-roles": self.persona.role}
+
     async def close(self) -> None:
         await self.http.aclose()
 
     async def command(self, command_type: str, **kwargs: Any) -> dict[str, Any]:
         body = {"command_type": command_type, **kwargs}
-        response = await self.http.post(
-            "/api/v1/commands",
-            json=body,
-            headers={"x-principal-id": self.persona.principal_id},
-        )
+        response = await self.http.post("/api/v1/commands", json=body, headers=self.headers)
         response.raise_for_status()
         return response.json()
 
     async def get(self, path: str) -> dict[str, Any]:
-        response = await self.http.get(path, headers={"x-principal-id": self.persona.principal_id})
+        response = await self.http.get(path, headers=self.headers)
         response.raise_for_status()
         return response.json()
