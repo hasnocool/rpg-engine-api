@@ -6,13 +6,7 @@ from typing import Any
 from rpg_engine_api.controllers.simple_npc import SimpleNpcController
 from rpg_engine_api.domain.actor import ActorState, reduce_actor
 from rpg_engine_api.domain.campaign import CampaignState, reduce_campaign
-from rpg_engine_api.domain.character_creation import (
-    REFERENCE_ARCHETYPES,
-    CharacterCreationSession,
-    CharacterCreationStatus,
-    character_creation_schema,
-    reduce_character_creation,
-)
+from rpg_engine_api.domain.character_creation import REFERENCE_ARCHETYPES, CharacterCreationSession, CharacterCreationStatus, character_creation_schema, reduce_character_creation
 from rpg_engine_api.domain.commands import CommandEnvelope, CommandError, CommandReceipt, CommandStatus, ErrorCode, PrincipalContext
 from rpg_engine_api.domain.controllers import ControllerAssignment, ControllerType
 from rpg_engine_api.domain.dice import DeterministicRng
@@ -38,10 +32,14 @@ class EngineService:
 
     async def execute(self, command: CommandEnvelope, principal: PrincipalContext, *, drive_controllers: bool = True) -> CommandReceipt:
         idempotency_key = command.idempotency_key or command.command_id
+        fingerprint = command.idempotency_fingerprint()
         async with self._command_lock:
             previous = await self.store.get_receipt(idempotency_key)
             if previous is not None:
-                return previous.model_copy(update={"status": CommandStatus.ALREADY_PROCESSED})
+                previous_fingerprint = await self.store.get_receipt_fingerprint(idempotency_key)
+                if previous_fingerprint is not None and previous_fingerprint != fingerprint:
+                    return CommandReceipt(command_id=command.command_id, status=CommandStatus.CONFLICT, error=CommandError(code=ErrorCode.IDEMPOTENCY_CONFLICT, message="idempotency key was already used for a different request", details={"idempotency_key": idempotency_key}))
+                return previous.model_copy(update={"command_id": command.command_id, "status": CommandStatus.ALREADY_PROCESSED})
             try:
                 receipt = await self._dispatch(command, principal)
             except StreamVersionConflict as exc:
@@ -50,7 +48,7 @@ class EngineService:
                 receipt = CommandReceipt(command_id=command.command_id, status=CommandStatus.REJECTED, error=CommandError(code=ErrorCode.NOT_FOUND, message=str(exc)))
             except ValueError as exc:
                 receipt = CommandReceipt(command_id=command.command_id, status=CommandStatus.REJECTED, error=CommandError(code=ErrorCode.INVALID_CHOICE, message=str(exc)))
-            await self.store.save_receipt(idempotency_key, receipt)
+            await self.store.save_receipt(idempotency_key, receipt, fingerprint=fingerprint)
         if drive_controllers and receipt.status == CommandStatus.ACCEPTED:
             encounter_id = receipt.result.get("encounter_id")
             if isinstance(encounter_id, str):
@@ -106,7 +104,7 @@ class EngineService:
         controller = ControllerAssignment.model_validate(command.payload.get("controller", {}))
         stream_id = f"actor:{actor_id}"
         expected = command.expected_stream_version if command.expected_stream_version is not None else 0
-        event = DomainEvent(event_type="ActorCreated", campaign_id=campaign_id, stream_id=stream_id, actor_id=actor_id, command_id=command.command_id, correlation_id=command.command_id, payload={"actor_id": actor_id, "name": str(command.payload.get("name", "Unnamed Actor")), "controller": controller.model_dump(mode="json"), "max_hp": int(command.payload.get("max_hp", 10)), "attack_bonus": int(command.payload.get("attack_bonus", 2)), "defense": int(command.payload.get("defense", 10))})
+        event = DomainEvent(event_type="ActorCreated", campaign_id=campaign_id, stream_id=stream_id, actor_id=actor_id, command_id=command.command_id, correlation_id=command.command_id, payload={"actor_id": actor_id, "name": str(command.payload.get("name", "Unnamed Actor")), "controller": controller.model_dump(mode="json"), "max_hp": int(command.payload.get("max_hp", 10)), "attack_bonus": int(command.payload.get("attack_bonus", 2)), "defense": int(command.payload.get("defense", 10)), "currency": int(command.payload.get("currency", 10))})
         stored = await self.store.append(stream_id, expected, (event,))
         actor = reduce_actor(None, stored[0])
         self.actors[actor_id] = actor
@@ -188,10 +186,7 @@ class EngineService:
         assert session.archetype is not None and session.name is not None
         stats = REFERENCE_ARCHETYPES[session.archetype]
         actor_id = str(command.payload.get("actor_id") or new_id("act"))
-        actor_receipt = await self._create_actor(
-            CommandEnvelope(command_id=new_id("cmd"), command_type="CreateActor", campaign_id=session.campaign_id, payload={"actor_id": actor_id, "name": session.name, "max_hp": stats["max_hp"], "attack_bonus": stats["attack_bonus"], "defense": stats["defense"], "controller": {"controller_type": "human", "controller_version": "1"}}),
-            principal,
-        )
+        actor_receipt = await self._create_actor(CommandEnvelope(command_id=new_id("cmd"), command_type="CreateActor", campaign_id=session.campaign_id, payload={"actor_id": actor_id, "name": session.name, "max_hp": stats["max_hp"], "attack_bonus": stats["attack_bonus"], "defense": stats["defense"], "controller": {"controller_type": "human", "controller_version": "1"}}), principal)
         if actor_receipt.status != CommandStatus.ACCEPTED:
             raise ValueError("failed to create finalized actor")
         creation_stream = f"character_creation:{creation_id}"
@@ -210,11 +205,7 @@ class EngineService:
         if actor.progression_points < 1:
             raise ValueError("actor has no progression points")
         choice = str(command.payload.get("choice", ""))
-        effects = {
-            "precision": {"feature": "precision_training", "attack_bonus_delta": 1},
-            "toughness": {"feature": "toughness_training", "max_hp_delta": 4},
-            "defense": {"feature": "defensive_training", "defense_delta": 1},
-        }
+        effects = {"precision": {"feature": "precision_training", "attack_bonus_delta": 1}, "toughness": {"feature": "toughness_training", "max_hp_delta": 4}, "defense": {"feature": "defensive_training", "defense_delta": 1}}
         if choice not in effects:
             raise ValueError("unknown progression choice")
         stream_id = f"actor:{actor_id}"
@@ -236,15 +227,6 @@ class EngineService:
         locations = command.payload.get("locations")
         if not isinstance(locations, list) or not locations:
             raise ValueError("world requires locations")
-        ids = {str(item["id"]) for item in locations if isinstance(item, dict) and "id" in item}
-        if len(ids) != len(locations):
-            raise ValueError("location IDs must be unique")
-        for item in locations:
-            if not isinstance(item, dict):
-                raise ValueError("locations must be objects")
-            for target in item.get("connections", []):
-                if target not in ids:
-                    raise ValueError(f"location {item['id']} references unknown connection {target}")
         stream_id = f"world:{world_id}"
         event = DomainEvent(event_type="WorldCreated", campaign_id=campaign_id, stream_id=stream_id, command_id=command.command_id, correlation_id=command.command_id, payload={"world_id": world_id, "locations": locations})
         stored = await self.store.append(stream_id, 0, (event,))
@@ -280,20 +262,20 @@ class EngineService:
         current_id = world.actor_locations.get(actor_id)
         if current_id is None:
             raise ValueError("actor is not placed in world")
-        destination = str(command.payload.get("destination_id", ""))
-        current = world.locations[current_id]
-        if destination not in current.connections:
-            raise ValueError("destination is not adjacent")
-        target = world.locations[destination]
-        discovered = world.discovered_locations.get(actor_id, [])
-        if target.hidden and destination not in discovered:
+        destination_id = str(command.payload.get("destination_id", ""))
+        if destination_id not in world.locations:
+            raise ValueError("destination does not exist")
+        if destination_id not in world.locations[current_id].connections:
+            raise ValueError("destination is not connected to current location")
+        destination = world.locations[destination_id]
+        if destination.hidden and destination_id not in world.discovered_locations.get(actor_id, []):
             raise ValueError("destination has not been discovered")
         stream_id = f"world:{world_id}"
         expected = await self.store.current_version(stream_id)
-        event = DomainEvent(event_type="ActorTravelled", campaign_id=world.campaign_id, stream_id=stream_id, actor_id=actor_id, command_id=command.command_id, correlation_id=command.command_id, payload={"destination_id": destination})
+        event = DomainEvent(event_type="ActorTravelled", campaign_id=world.campaign_id, stream_id=stream_id, actor_id=actor_id, command_id=command.command_id, correlation_id=command.command_id, payload={"origin_id": current_id, "destination_id": destination_id})
         stored = await self.store.append(stream_id, expected, (event,))
         self.worlds[world_id] = reduce_world(world, stored[0])
-        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=(stored[0].event_id,), stream_versions={stream_id: stored[0].stream_version}, result={"campaign_id": world.campaign_id, "world_id": world_id, "actor_id": actor_id, "location_id": destination})
+        return CommandReceipt(command_id=command.command_id, status=CommandStatus.ACCEPTED, emitted_event_ids=(stored[0].event_id,), stream_versions={stream_id: stored[0].stream_version}, result={"campaign_id": world.campaign_id, "world_id": world_id, "actor_id": actor_id, "destination_id": destination_id})
 
     async def _search_location(self, command: CommandEnvelope, principal: PrincipalContext) -> CommandReceipt:
         del principal
@@ -371,7 +353,8 @@ class EngineService:
                 raise ValueError(f"actor {actor_id} is not in campaign")
             side = str(raw.get("side", "side_a" if index == 0 else "side_b"))
             sides.add(side)
-            participants.append({"actor_id": actor_id, "side": side, "hp": actor.max_hp, "max_hp": actor.max_hp, "position": int(raw.get("position", index * 2)), "stamina": int(raw.get("stamina", 1)), "guard": 0})
+            stamina = int(raw.get("stamina", 1))
+            participants.append({"actor_id": actor_id, "side": side, "hp": actor.max_hp, "max_hp": actor.max_hp, "position": int(raw.get("position", index * 2)), "stamina": stamina, "max_stamina": max(1, stamina), "guard": 0})
         if len(sides) < 2:
             raise ValueError("encounter requires at least two opposing sides")
         stream_id = f"encounter:{encounter_id}"
@@ -449,7 +432,7 @@ class EngineService:
             damage_result = self._rng[encounter.campaign_id].roll(damage_expression, stream="dice") if hit else None
             damage = damage_result.total if damage_result else 0
             stamina = actor.stamina - (1 if action_id == "power_attack" else 0)
-            events.append(DomainEvent(event_type="PowerAttackResolved" if action_id == "power_attack" else "AttackResolved", payload={"actor_id": actor_id, "target_id": target.actor_id, "attack_roll": attack.rolls, "attack_total": attack_total, "target_defense": target_defense, "hit": hit, "damage_roll": damage_result.rolls if damage_result else (), "damage": damage, "target_hp": max(0, target.hp - damage), "attacker_stamina": stamina}, **base))
+            events.append(DomainEvent(event_type="PowerAttackResolved" if action_id == "power_attack" else "AttackResolved", payload={"actor_id": actor_id, "target_id": target.actor_id, "attack_roll": attack.rolls, "attack_total": attack_total, "attack_rng_sequence": attack.rng_sequence, "target_defense": target_defense, "hit": hit, "damage_roll": damage_result.rolls if damage_result else (), "damage_rng_sequence": damage_result.rng_sequence if damage_result else None, "damage": damage, "target_hp": max(0, target.hp - damage), "attacker_stamina": stamina}, **base))
         else:
             raise ValueError("unknown action")
         preview = encounter
@@ -552,7 +535,6 @@ class EngineService:
                             actions.append({**base, "action_id": "power_attack", "label": f"Power attack {enemy.actor_id}", "target_id": enemy.actor_id})
             actions.append({**base, "action_id": "guard", "label": "Guard"})
             return actions
-
         actions = [{"action_id": "roll_check", "label": "Roll a check", "command_type": "RollDice", "campaign_id": actor.campaign_id, "actor_id": actor.actor_id, "payload_schema": {"expression": "1d20", "purpose": "generic_check"}}]
         if actor.progression_points > 0:
             for choice, label in (("precision", "Train precision"), ("toughness", "Train toughness"), ("defense", "Train defense")):

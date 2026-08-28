@@ -1,3 +1,5 @@
+import hashlib
+import json
 from enum import StrEnum
 from typing import Any
 
@@ -57,6 +59,20 @@ class CommandEnvelope(BaseModel):
     idempotency_key: str | None = None
     client_sequence: int | None = Field(default=None, ge=0)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+    def idempotency_fingerprint(self) -> str:
+        """Hash semantic request fields while allowing a retry to use a new command_id."""
+        value = {
+            "schema_version": self.schema_version,
+            "command_type": self.command_type,
+            "campaign_id": self.campaign_id,
+            "actor_id": self.actor_id,
+            "expected_stream_version": self.expected_stream_version,
+            "client_sequence": self.client_sequence,
+            "payload": self.payload,
+        }
+        canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class PrincipalContext(BaseModel):

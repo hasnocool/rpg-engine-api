@@ -10,46 +10,66 @@ router = APIRouter()
 async def campaign_ws(websocket: WebSocket, campaign_id: str) -> None:
     await websocket.accept()
     engine = websocket.app.state.engine
-    queue = engine.store.subscribe()
+    queue = engine.store.subscribe(maxsize=256)
+    send_lock = asyncio.Lock()
+    last_sent = 0
+
+    async def send_json(payload: dict[str, object]) -> None:
+        async with send_lock:
+            await websocket.send_json(payload)
+
+    async def send_backlog(after_sequence: int) -> int:
+        current = await engine.store.last_sequence(campaign_id=campaign_id)
+        if current - after_sequence > 1000:
+            await send_json({"type": "server.resync_required", "campaign_id": campaign_id, "last_sequence": current, "reason": "resume_window_exceeded"})
+            return current
+        events = await engine.store.read_after(after_sequence, campaign_id=campaign_id, limit=1000)
+        for event in events:
+            await send_json({"type": "server.event", "event": event.model_dump(mode="json")})
+        return events[-1].sequence if events else after_sequence
+
+    query_after = websocket.query_params.get("after_sequence")
+    if query_after is not None:
+        try:
+            last_sent = await send_backlog(max(0, int(query_after)))
+        except ValueError:
+            await send_json({"type": "server.error", "code": "invalid_schema", "message": "after_sequence must be an integer"})
 
     async def send_events() -> None:
+        nonlocal last_sent
         while True:
+            if engine.store.subscription_overflowed(queue):
+                current = await engine.store.last_sequence(campaign_id=campaign_id)
+                await send_json({"type": "server.resync_required", "campaign_id": campaign_id, "last_sequence": current, "reason": "subscriber_backpressure"})
+                await websocket.close(code=1013, reason="subscriber fell behind")
+                return
             event = await queue.get()
-            if event.campaign_id == campaign_id:
-                await websocket.send_json(
-                    {"type": "server.event", "event": event.model_dump(mode="json")}
-                )
+            if event.campaign_id == campaign_id and event.sequence > last_sent:
+                await send_json({"type": "server.event", "event": event.model_dump(mode="json")})
+                last_sent = event.sequence
 
     sender = asyncio.create_task(send_events())
     try:
-        await websocket.send_json(
-            {
-                "type": "server.ready",
-                "campaign_id": campaign_id,
-                "heartbeat_interval": 30,
-                "schema_version": "1.0",
-            }
-        )
+        current = await engine.store.last_sequence(campaign_id=campaign_id)
+        await send_json({"type": "server.ready", "campaign_id": campaign_id, "heartbeat_interval": 30, "schema_version": "1.1", "current_sequence": current, "resume_from": last_sent})
         while True:
             message = await websocket.receive_json()
             message_type = message.get("type")
             if message_type == "client.ping":
-                await websocket.send_json({"type": "server.pong"})
+                await send_json({"type": "server.pong", "current_sequence": await engine.store.last_sequence(campaign_id=campaign_id)})
             elif message_type == "client.hello":
-                await websocket.send_json(
-                    {
-                        "type": "server.ready",
-                        "campaign_id": campaign_id,
-                        "resume_from": message.get("last_sequence"),
-                        "schema_version": "1.0",
-                    }
-                )
+                raw_sequence = message.get("last_sequence")
+                if raw_sequence is not None:
+                    try:
+                        last_sent = await send_backlog(max(0, int(raw_sequence)))
+                    except (TypeError, ValueError):
+                        await send_json({"type": "server.error", "code": "invalid_schema", "message": "last_sequence must be an integer"})
+                        continue
+                await send_json({"type": "server.ready", "campaign_id": campaign_id, "resume_from": last_sent, "current_sequence": await engine.store.last_sequence(campaign_id=campaign_id), "schema_version": "1.1"})
             elif message_type in {"client.subscribe", "client.unsubscribe", "client.ack"}:
-                await websocket.send_json({"type": "server.ack", "request_type": message_type})
+                await send_json({"type": "server.ack", "request_type": message_type, "current_sequence": await engine.store.last_sequence(campaign_id=campaign_id)})
             else:
-                await websocket.send_json(
-                    {"type": "server.error", "code": "invalid_schema", "message": "unknown message type"}
-                )
+                await send_json({"type": "server.error", "code": "invalid_schema", "message": "unknown message type"})
     except WebSocketDisconnect:
         pass
     finally:
