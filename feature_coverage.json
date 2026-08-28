@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "features": [
+    {"feature_id":"deterministic_core","milestone":"v0.1","implementation_paths":["src/rpg_engine_api/application/command_bus.py","src/rpg_engine_api/persistence/event_store.py"],"unit_tests":["tests/unit"],"playtest_scenarios":["tests/playtest/test_p0_p1.py"],"replay_cases":["tests/replay"],"required_local_profiles":["smoke","pr"]},
+    {"feature_id":"timing_actions","milestone":"v0.2","implementation_paths":["src/rpg_engine_api/domain/timeline.py","src/rpg_engine_api/domain/actions.py"],"unit_tests":["tests/unit/test_timeline.py"],"playtest_scenarios":["tests/playtest"],"required_local_profiles":["pr","playtest"]},
+    {"feature_id":"npc_combat","milestone":"v0.3","implementation_paths":["src/rpg_engine_api/controllers/simple_npc.py"],"controller_tests":["tests/controllers"],"simulation_checks":["tests/simulation/test_ai_vs_ai.py"],"playtest_scenarios":["tests/playtest"],"required_local_profiles":["playtest","simulation"]},
+    {"feature_id":"character_runtime","milestone":"v0.6","implementation_paths":["src/rpg_engine_api/domain/character_creation.py","src/rpg_engine_api/application/character_service.py"],"playtest_scenarios":["tests/playtest"],"replay_cases":["tests/replay"],"required_local_profiles":["playtest","replay"]},
+    {"feature_id":"campaign_composition","milestone":"v0.7","implementation_paths":["src/rpg_engine_api/application/composition_service.py","src/rpg_engine_api/application/living_world_service.py"],"playtest_scenarios":["tests/playtest/test_p5_session_journey.py"],"required_local_profiles":["full"]},
+    {"feature_id":"content_evolution","milestone":"v0.9","implementation_paths":["src/rpg_engine_api/application/production_service.py","src/rpg_engine_api/infrastructure/migration_sandbox.py"],"migration_fixtures":["tests/playtest/test_migration_sandbox.py"],"replay_cases":["tests/replay"],"required_local_profiles":["migration","replay","full"]},
+    {"feature_id":"release_recovery_security","milestone":"v1.0","implementation_paths":["src/rpg_engine_api/application/release_service.py","src/rpg_engine_api/infrastructure/recovery.py"],"negative_cases":["tests/playtest/test_security_recovery.py"],"required_local_profiles":["release"]}
+  ]
+}

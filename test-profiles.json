@@ -1,0 +1,6 @@
+{
+  "schema_version":"1.0",
+  "local_only":true,
+  "suites":{"unit":["tests/unit","tests/controllers"],"playtest_p0":["tests/playtest/test_p0_p1.py"],"playtest":["tests/playtest"],"integration":["tests/integration"],"replay":["tests/replay"],"simulation":["tests/simulation"],"migration":["tests/migration"],"performance":["tests/performance"]},
+  "profiles":{"smoke":["unit","playtest_p0"],"pr":["unit","replay","playtest"],"unit":["unit"],"integration":["integration"],"playtest":["playtest"],"simulation":["simulation"],"migration":["migration"],"replay":["replay"],"performance":["performance"],"full":["unit","integration","replay","playtest","simulation","migration"],"nightly":["unit","integration","replay","playtest","simulation","migration","performance"],"release":["unit","integration","replay","playtest","simulation","migration","performance"]}
+}
