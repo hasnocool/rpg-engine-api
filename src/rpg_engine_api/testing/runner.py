@@ -1,157 +1,120 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
-import xml.etree.ElementTree as ET
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from xml.etree import ElementTree
 
-from .evidence import ArtifactRef, EnvironmentEvidence, SuiteEvidence, SuiteStatus, TestEvidenceBundle
+from rpg_engine_api.testing.evidence import ArtifactRef, EnvironmentEvidence, SuiteEvidence, SuiteStatus, TestEvidenceBundle
 
 ROOT = Path(__file__).resolve().parents[3]
 ARTIFACT_ROOT = ROOT / "artifacts" / "test-evidence"
-
-SUITES: dict[str, list[str]] = {
-    "unit": ["tests/unit", "tests/controllers"],
-    "playtest_p0": ["tests/playtest/test_p0_p1.py"],
-    "playtest": ["tests/playtest"],
-    "integration": ["tests/integration"],
-    "replay": ["tests/replay"],
-    "simulation": ["tests/simulation"],
-    "migration": ["tests/migration"],
-    "performance": ["tests/performance"],
-}
-
-PROFILES: dict[str, list[str]] = {
-    "smoke": ["unit", "playtest_p0"],
-    "pr": ["unit", "replay", "playtest"],
-    "unit": ["unit"],
-    "integration": ["integration"],
-    "playtest": ["playtest"],
-    "simulation": ["simulation"],
-    "migration": ["migration"],
-    "replay": ["replay"],
-    "performance": ["performance"],
-    "full": ["unit", "integration", "replay", "playtest", "simulation", "migration"],
-    "nightly": ["unit", "integration", "replay", "playtest", "simulation", "migration", "performance"],
-    "release": ["unit", "integration", "replay", "playtest", "simulation", "migration", "performance"],
-}
+PROFILE_MANIFEST = ROOT / "test-profiles.json"
 
 
-def _git(*args: str, default: str = "unknown") -> str:
-    try:
-        result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True)
-    except (OSError, subprocess.CalledProcessError):
-        return default
-    return result.stdout.strip() or default
+def _load_profiles() -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    value = json.loads(PROFILE_MANIFEST.read_text(encoding="utf-8"))
+    if value.get("local_only") is not True:
+        raise RuntimeError("test-profiles.json must declare local_only=true")
+    suites = {str(name): [str(item) for item in paths] for name, paths in dict(value["suites"]).items()}
+    profiles = {str(name): [str(item) for item in names] for name, names in dict(value["profiles"]).items()}
+    for profile, names in profiles.items():
+        unknown = [name for name in names if name not in suites]
+        if unknown:
+            raise RuntimeError(f"profile {profile} references unknown suites: {unknown}")
+    return suites, profiles
 
 
-def _fingerprint(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()[:16]
+SUITES, PROFILES = _load_profiles()
 
 
-def _dependency_fingerprint() -> str:
-    try:
-        result = subprocess.run([sys.executable, "-m", "pip", "freeze"], cwd=ROOT, capture_output=True, text=True, check=True)
-        return _fingerprint(result.stdout)
-    except (OSError, subprocess.CalledProcessError):
-        return "unavailable"
+def _run_capture(command: list[str]) -> tuple[int, str]:
+    process = subprocess.run(command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    return process.returncode, process.stdout.strip()
+
+
+def _git_metadata() -> tuple[str, str | None, bool]:
+    sha_code, sha = _run_capture(["git", "rev-parse", "HEAD"])
+    branch_code, branch = _run_capture(["git", "branch", "--show-current"])
+    dirty_code, status = _run_capture(["git", "status", "--porcelain"])
+    return (sha if sha_code == 0 else "unknown", branch if branch_code == 0 and branch else None, dirty_code != 0 or bool(status))
+
+
+def _fingerprint(command: list[str]) -> str:
+    code, output = _run_capture(command)
+    raw = output if code == 0 else f"unavailable:{code}:{output}"
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _postgres_version() -> str | None:
-    try:
-        result = subprocess.run(["psql", "--version"], capture_output=True, text=True, check=True)
-        return result.stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
+    url = os.environ.get("RPG_ENGINE_DATABASE_URL")
+    if not url:
         return None
-
-
-def _parse_junit(path: Path) -> tuple[int, int, int, int]:
-    if not path.exists():
-        return (0, 0, 0, 0)
-    root = ET.parse(path).getroot()
-    nodes = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-    tests = sum(int(node.attrib.get("tests", 0)) for node in nodes)
-    failures = sum(int(node.attrib.get("failures", 0)) for node in nodes)
-    errors = sum(int(node.attrib.get("errors", 0)) for node in nodes)
-    skipped = sum(int(node.attrib.get("skipped", 0)) for node in nodes)
-    passed = max(0, tests - failures - errors - skipped)
-    return passed, failures, skipped, errors
+    code, output = _run_capture(["psql", "--version"])
+    return output if code == 0 else "configured-version-unavailable"
 
 
 def _environment() -> EnvironmentEvidence:
-    safe_config = {
-        "app_env": os.getenv("RPG_ENGINE_APP_ENV", "development"),
-        "persistence_backend": os.getenv("RPG_ENGINE_PERSISTENCE_BACKEND", "memory"),
-        "database_configured": bool(os.getenv("RPG_ENGINE_DATABASE_URL")),
-    }
-    return EnvironmentEvidence(
-        os=platform.platform(),
-        architecture=platform.machine(),
-        python=platform.python_version(),
-        dependency_fingerprint=_dependency_fingerprint(),
-        postgres_version=_postgres_version(),
-        config_fingerprint=_fingerprint(json.dumps(safe_config, sort_keys=True)),
-    )
+    config = {key: value for key, value in sorted(os.environ.items()) if key.startswith("RPG_ENGINE_") and not any(secret in key.lower() for secret in ("password", "secret", "token", "key"))}
+    return EnvironmentEvidence(os=platform.platform(), architecture=platform.machine(), python=sys.version.split()[0], dependency_fingerprint=_fingerprint([sys.executable, "-m", "pip", "freeze"]), postgres_version=_postgres_version(), config_fingerprint=hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest())
 
 
-def _run_suite(name: str, evidence_dir: Path) -> SuiteEvidence:
-    paths = SUITES[name]
-    junit_path = evidence_dir / "junit" / f"{name}.xml"
-    log_path = evidence_dir / "logs" / f"{name}.log"
-    command = [sys.executable, "-m", "pytest", "-q", *paths, f"--junitxml={junit_path}"]
-    started = time.monotonic()
-    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
-    duration = time.monotonic() - started
-    log_path.write_text(result.stdout + "\n--- STDERR ---\n" + result.stderr, encoding="utf-8")
-    passed, failed, skipped, errors = _parse_junit(junit_path)
-    if result.returncode != 0:
-        status = SuiteStatus.FAILED
-    elif passed == 0 and skipped > 0:
-        status = SuiteStatus.BLOCKED
-    else:
-        status = SuiteStatus.PASSED
-    return SuiteEvidence(name=name, command=command, status=status, exit_code=result.returncode, duration_seconds=round(duration, 3), passed=passed, failed=failed, skipped=skipped, errors=errors, junit_path=str(junit_path.relative_to(ROOT)) if junit_path.exists() else None, log_path=str(log_path.relative_to(ROOT)))
+def _parse_junit(path: Path) -> dict[str, int]:
+    if not path.exists(): return {"passed":0,"failed":0,"skipped":0,"errors":0}
+    root = ElementTree.parse(path).getroot(); tests=failures=skipped=errors=0
+    nodes=[root] if root.tag=="testsuite" else list(root.findall("testsuite"))
+    for node in nodes:
+        tests+=int(node.attrib.get("tests",0));failures+=int(node.attrib.get("failures",0));skipped+=int(node.attrib.get("skipped",0));errors+=int(node.attrib.get("errors",0))
+    return {"passed":max(0,tests-failures-skipped-errors),"failed":failures,"skipped":skipped,"errors":errors}
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        raise SystemExit(f"usage: {sys.argv[0]} <profile>; profiles: {', '.join(PROFILES)}")
-    profile = sys.argv[1]
-    if profile not in PROFILES:
-        raise SystemExit(f"unknown profile {profile!r}; profiles: {', '.join(PROFILES)}")
-    commit = _git("rev-parse", "HEAD")
-    branch = _git("branch", "--show-current", default="") or None
-    dirty = bool(_git("status", "--porcelain", default=""))
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    evidence_id = f"{timestamp}-{commit[:12]}-{profile}"
-    evidence_dir = ARTIFACT_ROOT / evidence_id
-    for child in ("junit", "logs", "coverage", "playtest", "replay", "simulation", "migration", "performance"):
-        (evidence_dir / child).mkdir(parents=True, exist_ok=True)
-    bundle = TestEvidenceBundle(evidence_id=evidence_id, repository="hasnocool/rpg-engine-api", commit_sha=commit, branch=branch, dirty_worktree=dirty, test_profile=profile, environment=_environment())
+def _policy_suite(profile: str, dirty: bool) -> tuple[SuiteEvidence, list[str]]:
+    errors: list[str] = []
+    workflows = ROOT / ".github" / "workflows"
+    if workflows.exists() and any(path.is_file() for path in workflows.rglob("*")):
+        errors.append("GitHub Actions workflows are prohibited; .github/workflows must remain absent/empty")
+    if profile == "release" and dirty:
+        errors.append("release profile requires a clean exact-commit worktree")
+    status = SuiteStatus.BLOCKED if errors else SuiteStatus.PASSED
+    return SuiteEvidence(name="repository_policy", command=["internal:repository_policy"], status=status, exit_code=2 if errors else 0, duration_seconds=0.0, passed=0 if errors else 1, failed=0, skipped=0, errors=len(errors)), errors
+
+
+def _run_suite(name: str, paths: list[str], run_dir: Path) -> SuiteEvidence:
+    junit = run_dir / f"{name}.xml"; log = run_dir / f"{name}.log"; command=[sys.executable,"-m","pytest","-q",*paths,"--junitxml",str(junit)]
+    started=time.perf_counter(); process=subprocess.run(command,cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False); duration=time.perf_counter()-started; log.write_text(process.stdout,encoding="utf-8"); counts=_parse_junit(junit)
+    return SuiteEvidence(name=name,command=command,status=SuiteStatus.PASSED if process.returncode==0 else SuiteStatus.FAILED,exit_code=process.returncode,duration_seconds=duration,junit_path=str(junit.relative_to(ROOT)),log_path=str(log.relative_to(ROOT)),**counts)
+
+
+def _write_bundle(bundle: TestEvidenceBundle, run_dir: Path) -> Path:
+    path=run_dir/"evidence.json";path.write_text(bundle.model_dump_json(indent=2),encoding="utf-8");return path
+
+
+def run_profile(profile: str) -> int:
+    if profile not in PROFILES: print(f"unknown profile {profile!r}; choose one of: {', '.join(sorted(PROFILES))}",file=sys.stderr);return 2
+    evidence_id=f"evidence-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}";run_dir=ARTIFACT_ROOT/evidence_id;run_dir.mkdir(parents=True,exist_ok=False);sha,branch,dirty=_git_metadata();started=datetime.now(UTC)
+    bundle=TestEvidenceBundle(evidence_id=evidence_id,repository="hasnocool/rpg-engine-api",commit_sha=sha,branch=branch,dirty_worktree=dirty,test_profile=profile,environment=_environment(),started_at=started)
+    policy, policy_errors = _policy_suite(profile, dirty); bundle.suites.append(policy)
+    if policy_errors:
+        bundle.overall_status=SuiteStatus.BLOCKED;bundle.finished_at=datetime.now(UTC);bundle.summary={"policy_errors":policy_errors,"passed":0,"failed":0,"blocked":1,"skipped":0,"errors":len(policy_errors)};path=_write_bundle(bundle,run_dir);print(f"{profile}: blocked -> {path.relative_to(ROOT)}");return 2
     for suite_name in PROFILES[profile]:
-        bundle.suites.append(_run_suite(suite_name, evidence_dir))
-    if any(item.status == SuiteStatus.FAILED for item in bundle.suites):
-        bundle.overall_status = SuiteStatus.FAILED
-    elif any(item.status == SuiteStatus.BLOCKED for item in bundle.suites):
-        bundle.overall_status = SuiteStatus.BLOCKED
-    else:
-        bundle.overall_status = SuiteStatus.PASSED
-    bundle.finished_at = datetime.now(UTC)
-    bundle.summary = {"passed_suites": sum(item.status == SuiteStatus.PASSED for item in bundle.suites), "failed_suites": sum(item.status == SuiteStatus.FAILED for item in bundle.suites), "blocked_suites": sum(item.status == SuiteStatus.BLOCKED for item in bundle.suites)}
-    bundle.artifacts.extend([ArtifactRef(kind="junit", path=item.junit_path) for item in bundle.suites if item.junit_path])
-    evidence_json = evidence_dir / "evidence.json"
-    evidence_json.write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
-    summary = evidence_dir / "summary.md"
-    summary.write_text("# Test evidence\n\n" f"- commit: `{commit}`\n" f"- profile: `{profile}`\n" f"- status: **{bundle.overall_status.value}**\n" f"- dirty worktree: `{dirty}`\n\n" + "\n".join(f"- {item.name}: {item.status.value} (passed={item.passed}, failed={item.failed}, skipped={item.skipped}, errors={item.errors})" for item in bundle.suites) + "\n", encoding="utf-8")
-    print(summary.read_text(encoding="utf-8"))
-    print(f"evidence: {evidence_json.relative_to(ROOT)}")
-    if bundle.overall_status != SuiteStatus.PASSED:
-        raise SystemExit(1)
+        suite=_run_suite(suite_name,SUITES[suite_name],run_dir);bundle.suites.append(suite)
+        if suite.junit_path: bundle.artifacts.append(ArtifactRef(kind="junit",path=suite.junit_path))
+        if suite.log_path: bundle.artifacts.append(ArtifactRef(kind="log",path=suite.log_path))
+    failed=any(suite.status==SuiteStatus.FAILED for suite in bundle.suites);bundle.overall_status=SuiteStatus.FAILED if failed else SuiteStatus.PASSED;bundle.finished_at=datetime.now(UTC);bundle.summary={"passed":sum(suite.passed for suite in bundle.suites),"failed":sum(suite.failed for suite in bundle.suites),"blocked":sum(suite.status==SuiteStatus.BLOCKED for suite in bundle.suites),"skipped":sum(suite.skipped for suite in bundle.suites),"errors":sum(suite.errors for suite in bundle.suites)};path=_write_bundle(bundle,run_dir);print(f"{profile}: {bundle.overall_status.value} -> {path.relative_to(ROOT)}");return 0 if bundle.overall_status==SuiteStatus.PASSED else 1
 
 
-if __name__ == "__main__":
-    main()
+def main(argv: list[str] | None = None) -> int:
+    args=list(argv if argv is not None else sys.argv[1:]);
+    if len(args)!=1: print("usage: python -m rpg_engine_api.testing.runner <profile>",file=sys.stderr);return 2
+    return run_profile(args[0])
+
+
+if __name__ == "__main__": raise SystemExit(main())
