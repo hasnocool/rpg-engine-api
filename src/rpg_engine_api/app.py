@@ -5,13 +5,14 @@ from rpg_engine_api.api.commands import router as command_router
 from rpg_engine_api.api.composition import router as composition_router
 from rpg_engine_api.api.creator import router as creator_router
 from rpg_engine_api.api.evolution import router as evolution_router
+from rpg_engine_api.api.extensions import router as extension_router
 from rpg_engine_api.api.health import router as health_router
 from rpg_engine_api.api.living_world import router as living_world_router
 from rpg_engine_api.api.observability import router as observability_router
 from rpg_engine_api.api.production import router as production_router
 from rpg_engine_api.api.queries import router as query_router
 from rpg_engine_api.api.ws import router as ws_router
-from rpg_engine_api.application.living_world_service import LivingWorldEngineService
+from rpg_engine_api.application.extension_service import ExtensionEngineService
 from rpg_engine_api.config import Settings,get_settings
 from rpg_engine_api.domain.ids import new_id
 from rpg_engine_api.infrastructure.rate_limit import SlidingWindowRateLimiter
@@ -19,7 +20,7 @@ from rpg_engine_api.persistence.postgres import PostgresEventStore
 from rpg_engine_api.security.auth import LocalHeaderAuthenticationProvider
 
 def create_app(settings:Settings|None=None)->FastAPI:
-    resolved=settings or get_settings();store=PostgresEventStore(resolved.database_url) if resolved.postgres_configured and resolved.database_url else None;engine=LivingWorldEngineService(store=store)
+    resolved=settings or get_settings();store=PostgresEventStore(resolved.database_url) if resolved.postgres_configured and resolved.database_url else None;engine=ExtensionEngineService(store=store)
     @asynccontextmanager
     async def lifespan(app:FastAPI):
         if store is not None:await engine.rebuild_from_store()
@@ -31,5 +32,5 @@ def create_app(settings:Settings|None=None)->FastAPI:
     @app.middleware("http")
     async def request_id_middleware(request:Request,call_next):
         request_id=request.headers.get("X-Request-Id") or new_id("req");request.state.request_id=request_id;response=await call_next(request);response.headers["X-Request-Id"]=request_id;response.headers["X-RPG-API-Version"]="v1";return response
-    for router in (health_router,command_router,query_router,creator_router,evolution_router,advanced_router,composition_router,living_world_router,production_router,observability_router,ws_router):app.include_router(router)
+    for router in (health_router,command_router,query_router,creator_router,evolution_router,advanced_router,composition_router,living_world_router,extension_router,production_router,observability_router,ws_router):app.include_router(router)
     return app
