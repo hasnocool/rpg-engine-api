@@ -37,22 +37,38 @@ class InMemoryEventStore:
         return len(self._streams.get(stream_id, ()))
 
     async def append(self, stream_id: str, expected_version: int, events: Iterable[DomainEvent]) -> tuple[DomainEvent, ...]:
+        result = await self.append_many(((stream_id, expected_version, tuple(events)),))
+        return result[stream_id]
+
+    async def append_many(
+        self,
+        requests: tuple[tuple[str, int, tuple[DomainEvent, ...]], ...],
+    ) -> dict[str, tuple[DomainEvent, ...]]:
+        stream_ids = [stream_id for stream_id, _, _ in requests]
+        if len(stream_ids) != len(set(stream_ids)):
+            raise ValueError("append_many requires unique stream IDs")
         async with self._lock:
-            stream = self._streams.setdefault(stream_id, [])
-            actual = len(stream)
-            if actual != expected_version:
-                raise StreamVersionConflict(stream_id, expected_version, actual)
-            stored: list[DomainEvent] = []
-            for raw in events:
-                version = len(stream) + 1
-                sequence = len(self._events) + 1
-                event = raw.model_copy(update={"stream_id": stream_id, "stream_version": version, "sequence": sequence})
-                stream.append(event)
-                self._events.append(event)
-                self._outbox[event.event_id] = (event, None)
-                stored.append(event)
+            for stream_id, expected_version, _ in requests:
+                actual = len(self._streams.get(stream_id, ()))
+                if actual != expected_version:
+                    raise StreamVersionConflict(stream_id, expected_version, actual)
+            stored_by_stream: dict[str, list[DomainEvent]] = {}
+            ordered_stored: list[DomainEvent] = []
+            for stream_id, _, pending in requests:
+                stream = self._streams.setdefault(stream_id, [])
+                bucket: list[DomainEvent] = []
+                for raw in pending:
+                    version = len(stream) + 1
+                    sequence = len(self._events) + 1
+                    event = raw.model_copy(update={"stream_id": stream_id, "stream_version": version, "sequence": sequence})
+                    stream.append(event)
+                    self._events.append(event)
+                    self._outbox[event.event_id] = (event, None)
+                    bucket.append(event)
+                    ordered_stored.append(event)
+                stored_by_stream[stream_id] = bucket
             subscribers = tuple(self._subscribers)
-        for event in stored:
+        for event in ordered_stored:
             for queue in subscribers:
                 if queue in self._overflowed_subscribers:
                     continue
@@ -60,7 +76,7 @@ class InMemoryEventStore:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
                     self._overflowed_subscribers.add(queue)
-        return tuple(stored)
+        return {stream_id: tuple(events) for stream_id, events in stored_by_stream.items()}
 
     async def read_stream(self, stream_id: str) -> tuple[DomainEvent, ...]:
         return tuple(self._streams.get(stream_id, ()))
