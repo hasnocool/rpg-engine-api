@@ -40,30 +40,47 @@ class PostgresEventStore:
             return int((await connection.scalar(select(event_streams.c.version).where(event_streams.c.stream_id == stream_id))) or 0)
 
     async def append(self, stream_id: str, expected_version: int, events: Iterable[DomainEvent]) -> tuple[DomainEvent, ...]:
-        pending = tuple(events)
+        result = await self.append_many(((stream_id, expected_version, tuple(events)),))
+        return result[stream_id]
+
+    async def append_many(
+        self,
+        requests: tuple[tuple[str, int, tuple[DomainEvent, ...]], ...],
+    ) -> dict[str, tuple[DomainEvent, ...]]:
+        stream_ids = [stream_id for stream_id, _, _ in requests]
+        if len(stream_ids) != len(set(stream_ids)):
+            raise ValueError("append_many requires unique stream IDs")
+        stored_by_stream: dict[str, list[DomainEvent]] = {}
+        ordered_stored: list[DomainEvent] = []
         async with self.engine.begin() as connection:
-            row = (await connection.execute(select(event_streams.c.version).where(event_streams.c.stream_id == stream_id).with_for_update())).first()
-            if row is None:
-                if expected_version != 0:
-                    raise StreamVersionConflict(stream_id, expected_version, 0)
-                await connection.execute(insert(event_streams).values(stream_id=stream_id, version=0))
-                actual = 0
-            else:
-                actual = int(row.version)
-                if actual != expected_version:
-                    raise StreamVersionConflict(stream_id, expected_version, actual)
-            stored: list[DomainEvent] = []
-            version = actual
-            for raw in pending:
-                version += 1
-                provisional = raw.model_copy(update={"stream_id": stream_id, "stream_version": version})
-                sequence = int((await connection.execute(insert(domain_events).values(event_id=provisional.event_id, stream_id=stream_id, stream_version=version, campaign_id=provisional.campaign_id, event_type=provisional.event_type, event_json=provisional.model_dump_json()).returning(domain_events.c.sequence))).scalar_one())
-                event = provisional.model_copy(update={"sequence": sequence})
-                await connection.execute(update(domain_events).where(domain_events.c.event_id == event.event_id).values(event_json=event.model_dump_json()))
-                await connection.execute(insert(outbox_events).values(event_id=event.event_id, payload_json=event.model_dump_json()))
-                stored.append(event)
-            await connection.execute(update(event_streams).where(event_streams.c.stream_id == stream_id).values(version=version))
-        for event in stored:
+            versions: dict[str, int] = {}
+            for stream_id, expected_version, _ in sorted(requests, key=lambda item: item[0]):
+                row = (await connection.execute(select(event_streams.c.version).where(event_streams.c.stream_id == stream_id).with_for_update())).first()
+                if row is None:
+                    if expected_version != 0:
+                        raise StreamVersionConflict(stream_id, expected_version, 0)
+                    await connection.execute(insert(event_streams).values(stream_id=stream_id, version=0))
+                    versions[stream_id] = 0
+                else:
+                    actual = int(row.version)
+                    if actual != expected_version:
+                        raise StreamVersionConflict(stream_id, expected_version, actual)
+                    versions[stream_id] = actual
+            for stream_id, _, pending in requests:
+                version = versions[stream_id]
+                bucket: list[DomainEvent] = []
+                for raw in pending:
+                    version += 1
+                    provisional = raw.model_copy(update={"stream_id": stream_id, "stream_version": version})
+                    sequence = int((await connection.execute(insert(domain_events).values(event_id=provisional.event_id, stream_id=stream_id, stream_version=version, campaign_id=provisional.campaign_id, event_type=provisional.event_type, event_json=provisional.model_dump_json()).returning(domain_events.c.sequence))).scalar_one())
+                    event = provisional.model_copy(update={"sequence": sequence})
+                    await connection.execute(update(domain_events).where(domain_events.c.event_id == event.event_id).values(event_json=event.model_dump_json()))
+                    await connection.execute(insert(outbox_events).values(event_id=event.event_id, payload_json=event.model_dump_json()))
+                    bucket.append(event)
+                    ordered_stored.append(event)
+                stored_by_stream[stream_id] = bucket
+                await connection.execute(update(event_streams).where(event_streams.c.stream_id == stream_id).values(version=version))
+        for event in ordered_stored:
             for queue in tuple(self._subscribers):
                 if queue in self._overflowed_subscribers:
                     continue
@@ -71,7 +88,7 @@ class PostgresEventStore:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
                     self._overflowed_subscribers.add(queue)
-        return tuple(stored)
+        return {stream_id: tuple(events) for stream_id, events in stored_by_stream.items()}
 
     async def read_stream(self, stream_id: str) -> tuple[DomainEvent, ...]:
         async with self.engine.connect() as connection:
