@@ -27,4 +27,6 @@ This repository **must never use GitHub Actions** unless the user explicitly rev
 
 For execution claims, follow `LOCAL_TEST_AGENT.md`: **local-agent evidence only** is commit-bound and authoritative for what actually ran. Do not claim `verified locally`, `all tests pass`, integration success, a TODO execution gate, or release readiness without matching local evidence for the exact candidate commit. If evidence is unavailable, leave the verification TODO unchecked or `[AWAITING EVIDENCE]` and identify the canonical local profile that must run.
 
+Use `./scripts/test-all` for the full canonical local sweep when you need programmatic reruns across every profile; it remains local-only and does not replace `./scripts/test`.
+
 When completing work, update `TODO.md` objectively: implementation may be marked in progress/awaiting evidence before the local executor verifies it; only evidence-backed execution gates become complete.

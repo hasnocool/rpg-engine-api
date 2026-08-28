@@ -127,7 +127,7 @@ The broad v0.1 sequence remains:
 
 ```text
 project scaffold
-    -> canonical scripts/test + TestEvidenceBundle
+    -> canonical scripts/test + scripts/test-all + TestEvidenceBundle
     -> IDs/definitions/controller seam
     -> commands/events/errors/RNG
     -> campaign/actor foundations
@@ -195,6 +195,8 @@ release
 ```
 
 These names describe **local profiles**, not GitHub Actions jobs.
+
+Use `./scripts/test-all` when you need the full local canonical profile sweep; it is a local wrapper around the same profiles and still produces local evidence only.
 
 If evidence is absent, report `not executed` / `execution evidence unavailable` and name the profile the local agent should run.
 

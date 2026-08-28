@@ -10,6 +10,8 @@ This repository uses **local test execution only**. GitHub Actions are intention
 
 The designated local test agent runs canonical profiles through `./scripts/test` and produces exact-commit `TestEvidenceBundle` artifacts under `artifacts/test-evidence/`. Remote coding/review agents may write and review tests, but they do not claim execution success without matching local evidence.
 
+Use `./scripts/test-all` for the full local profile sweep; it boots local PostgreSQL if needed and runs the canonical profiles programmatically.
+
 See [`docs/testing/LOCAL_TEST_AGENT.md`](docs/testing/LOCAL_TEST_AGENT.md) and [`docs/testing/LOCAL_QUICKSTART.md`](docs/testing/LOCAL_QUICKSTART.md).
 
 ## Local development
@@ -22,6 +24,7 @@ python -m pip install -e '.[dev]'
 
 ./scripts/test smoke
 ./scripts/test pr
+./scripts/test-all
 ```
 
 For PostgreSQL-backed local testing:
