@@ -10,7 +10,7 @@ from rpg_engine_api.api.observability import router as observability_router
 from rpg_engine_api.api.production import router as production_router
 from rpg_engine_api.api.queries import router as query_router
 from rpg_engine_api.api.ws import router as ws_router
-from rpg_engine_api.application.gameplay_service import GameplayEngineService
+from rpg_engine_api.application.power_service import PowerEngineService
 from rpg_engine_api.config import Settings,get_settings
 from rpg_engine_api.domain.ids import new_id
 from rpg_engine_api.infrastructure.rate_limit import SlidingWindowRateLimiter
@@ -18,7 +18,7 @@ from rpg_engine_api.persistence.postgres import PostgresEventStore
 from rpg_engine_api.security.auth import LocalHeaderAuthenticationProvider
 
 def create_app(settings:Settings|None=None)->FastAPI:
-    resolved=settings or get_settings();store=PostgresEventStore(resolved.database_url) if resolved.postgres_configured and resolved.database_url else None;engine=GameplayEngineService(store=store)
+    resolved=settings or get_settings();store=PostgresEventStore(resolved.database_url) if resolved.postgres_configured and resolved.database_url else None;engine=PowerEngineService(store=store)
     @asynccontextmanager
     async def lifespan(app:FastAPI):
         if store is not None:await engine.rebuild_from_store()
